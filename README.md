@@ -96,6 +96,18 @@ python build_exe.py
 - **基金监控****：基金实时净值获取、指数实时净值获取、基金历史估值查询、基金左侧加仓策略建议
 - **数据库升级**：数据库自动升级
 
+## 📸 功能截图
+
+### 监控主界面
+![fund1.png](resources/function/fund1.png)
+### 基金管理
+![fund2.png](resources/function/fund2.png)
+### 设置
+![fund3.png](resources/function/fund3.png)
+### 基金历史净值查询
+![fund4.png](resources/function/fund4.png)
+### 基金左侧加仓策略分析
+![fund5.png](resources/function/fund5.png)
 
 
 ## 📄 许可证
