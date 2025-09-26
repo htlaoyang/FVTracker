@@ -1,4 +1,4 @@
- <img width="120px" src="https://gitee.com/huazhechen/cuber/raw/master/resource/icon.png"  alt="icon"/>
+ <img width="120px" src="https://gitee.com/HTLaoYang/FVTracker/blob/master/resources/logo.png"  alt="icon"/>
 
 
 <div align="center">
