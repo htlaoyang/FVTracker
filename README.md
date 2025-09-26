@@ -133,7 +133,6 @@ python build_exe.py
     <td ><img src="./resources/screenshotwechat.png"/></td>  
   </tr>
 </table>
-![screenshotwechat.png](resources/screenshotwechat.png) 
 
 ## 🧧 捐献作者
 ### 都划到这了，如果我的项目对您有帮助，请赞助我吧！😊😊😊
