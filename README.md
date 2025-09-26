@@ -114,18 +114,16 @@ python build_exe.py
 - 问题请在群内讨论
 <table>
   <tr>
-    <td >微信交流群（添加时备注：进群）</td>
-    <td >官方公众号</td>
+    <td align="center">官方公众号</td>
   </tr>
   <tr>
-    <td ><img height="320" width="250" src=""/></td>  
-    <td ><img height="250" width="250" src="./resources/screenshotwechat.png"/></td>  
+    <td ><img src="./resources/screenshotwechat.png"/></td>  
   </tr>
 </table>
-![输入图片说明](resources/screenshotwechat.png)
+![screenshotwechat.png](resources/screenshotwechat.png) 
 
 ## 🧧 捐献作者
 ### 都划到这了，如果我的项目对您有帮助，请赞助我吧！😊😊😊
-| 支付宝 | 微信  |
+|     支付宝 |      微信  |
 |-----|-----| 
 | ![alipay.jpg](resources/screenshot/alipay.jpg)  | ![wxpay.jpg](resources/screenshot/wxpay.jpg) |
