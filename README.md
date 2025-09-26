@@ -112,8 +112,6 @@ python build_exe.py
 **加群前请先阅读一下内容：**
 - 禁止内容：黄腔、暴力言论、政治话题，违者直接飞机票（踢出群）
 - 问题请在群内讨论
-![screenshotwechat.png](resources/screenshotwechat.png)
-
 <table>
   <tr>
     <td >微信交流群（添加时备注：进群）</td>
@@ -124,7 +122,7 @@ python build_exe.py
     <td ><img height="250" width="250" src="./resources/screenshotwechat.png"/></td>  
   </tr>
 </table>
-<img src="./resources/screenshotwechat.png" width="301px" height="402px" alt="ArvinLovegood">
+![输入图片说明](resources/screenshotwechat.png)
 
 ## 🧧 捐献作者
 ### 都划到这了，如果我的项目对您有帮助，请赞助我吧！😊😊😊
