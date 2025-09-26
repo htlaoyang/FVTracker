@@ -23,6 +23,7 @@
 FVTracker 是一个基于Python的基金估值跟踪工具，接口数据来源于网上公开的API；
 项目初衷主要是获取基金每天实时估值记录，用于分析及提供一些特定策略。
 对于估值在底部震荡基金，提出一个分批加仓策略建议;帮助用户证验自已的操作理念或是提供回本执行计划；
+仅供学习参考，投资需谨慎。
 项目地址：[gitee](https://gitee.com/HTLaoYang/FVTracker)    |    [github](https://github.com/htlaoyang/FVTracker) 
 
 
