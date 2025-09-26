@@ -1,5 +1,5 @@
 <div align="center">
-  <img width="160px" src="./resources/logo.png" alt="icon"/>
+  <img width="80px" src="./resources/logo.png" alt="icon"/>
   <h1>FVTracker</h1>
 </div>
 
