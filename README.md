@@ -130,8 +130,8 @@ python build_exe.py
     <td align="center">微信</td>
   </tr>
   <tr>
-    <td ><img height="600" width="300" src="./resources/alipay.jpg"/></td>  
-    <td ><img height="600" width="300" src="./resources/wxpay.jpg"/></td>  
+    <td ><img height="520" width="450" src="./resources/screenshot/alipay.jpg"/></td>  
+    <td ><img height="520" width="450" src="./resources/screenshot/wxpay.jpg"/></td>  
   </tr>
 </table>
 
