@@ -124,6 +124,18 @@ python build_exe.py
 
 ## 🧧 捐献作者
 ### 都划到这了，如果我的项目对您有帮助，请赞助我吧！😊😊😊
+<table>
+  <tr>
+    <td align="center">支付宝</td>
+    <td align="center">微信</td>
+  </tr>
+  <tr>
+    <td ><img height="600" width="300" src="./resources/alipay.jpg"/></td>  
+    <td ><img height="600" width="300" src="./resources/wxpay.jpg"/></td>  
+  </tr>
+</table>
+
+
 |     支付宝 |      微信  |
 |-----|-----| 
 | ![alipay.jpg](resources/screenshot/alipay.jpg)  | ![wxpay.jpg](resources/screenshot/wxpay.jpg) |
