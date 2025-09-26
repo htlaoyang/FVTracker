@@ -136,4 +136,4 @@ python build_exe.py
 </table>
 
 ## ⭐ Star History
-[![Star History Chart](https://api.star-history.com/svg?repos=HTLaoYang/FVTracker&type=Date)](https://star-history.com/#HTLaoYang/FVTracker&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=HTLaoYang/FVTracker&type=Date)](https://www.star-history.com/#HTLaoYang/FVTracker&Date)
