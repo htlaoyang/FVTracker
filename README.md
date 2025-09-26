@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://gitee.com/HTLaoYang/FVTracker/blob/master/resources/logo.png" width="160">
+  <img width="160px" src="https://gitee.com/HTLaoYang/FVTracker/blob/master/resources/logo.png" alt="icon"/>
   <h1>FVTracker</h1>
 </div>
 
