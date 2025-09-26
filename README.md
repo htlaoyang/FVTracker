@@ -1,3 +1,6 @@
+ <img width="120px" src="https://gitee.com/huazhechen/cuber/raw/master/resource/icon.png"  alt="icon"/>
+
+
 <div align="center">
   <img width="160px" src="https://gitee.com/HTLaoYang/FVTracker/blob/master/resources/logo.png" alt="icon"/>
   <h1>FVTracker</h1>
