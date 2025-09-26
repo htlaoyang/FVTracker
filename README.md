@@ -130,12 +130,16 @@ python build_exe.py
     <td align="center">微信</td>
   </tr>
   <tr>
-    <td ><img height="520" width="450" src="./resources/screenshot/alipay.jpg"/></td>  
-    <td ><img height="520" width="450" src="./resources/screenshot/wxpay.jpg"/></td>  
+    <td ><img width="450" src="./resources/screenshot/alipay.jpg"/></td>  
+    <td ><img width="500" src="./resources/screenshot/wxpay.jpg"/></td>  
   </tr>
 </table>
 
-
-|     支付宝 |      微信  |
+<table>
+  <tr>
+    <td align="center">支付宝</td>
+    <td align="center">微信</td>
+  </tr>
+</table>
 |-----|-----| 
 | ![alipay.jpg](resources/screenshot/alipay.jpg)  | ![wxpay.jpg](resources/screenshot/wxpay.jpg) |
