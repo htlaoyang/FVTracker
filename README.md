@@ -135,11 +135,5 @@ python build_exe.py
   </tr>
 </table>
 
-<table>
-  <tr>
-    <td align="center">支付宝</td>
-    <td align="center">微信</td>
-  </tr>
-</table>
-|-----|-----| 
-| ![alipay.jpg](resources/screenshot/alipay.jpg)  | ![wxpay.jpg](resources/screenshot/wxpay.jpg) |
+## ⭐ Star History
+[![Star History Chart](https://api.star-history.com/svg?repos=HTLaoYang/FVTracker&type=Date)](https://star-history.com/#HTLaoYang/FVTracker&Date)
