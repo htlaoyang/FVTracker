@@ -1,8 +1,5 @@
- <img width="120px" src="https://gitee.com/HTLaoYang/FVTracker/blob/master/resources/logo.png"  alt="icon"/>
-
-
 <div align="center">
-  <img width="160px" src="https://gitee.com/HTLaoYang/FVTracker/blob/master/resources/logo.png" alt="icon"/>
+  <img width="160px" src="./resources/logo.png" alt="icon"/>
   <h1>FVTracker</h1>
 </div>
 
@@ -62,7 +59,7 @@ root
 
 ### 环境要求建议
 - Python >= 3.8.10
-- pip    >= 25.0.1
+- pip    >= 25.0.1 
 - Git
 
 ### 使用步骤及说明
@@ -111,4 +108,26 @@ python build_exe.py
 - **邮箱**: htlaoyang@163.com
 - **作者主页**: https://gitee.com/HTLaoYang
 
+## 👏 微信交流群/合作
+**加群前请先阅读一下内容：**
+- 禁止内容：黄腔、暴力言论、政治话题，违者直接飞机票（踢出群）
+- 问题请在群内讨论
+![screenshotwechat.png](resources/screenshotwechat.png)
 
+<table>
+  <tr>
+    <td >微信交流群（添加时备注：进群）</td>
+    <td >官方公众号</td>
+  </tr>
+  <tr>
+    <td ><img height="320" width="250" src=""/></td>  
+    <td ><img height="250" width="250" src="./resources/screenshotwechat.png"/></td>  
+  </tr>
+</table>
+<img src="./resources/screenshotwechat.png" width="301px" height="402px" alt="ArvinLovegood">
+
+## 🧧 捐献作者
+### 都划到这了，如果我的项目对您有帮助，请赞助我吧！😊😊😊
+| 支付宝 | 微信  |
+|-----|-----| 
+| ![alipay.jpg](resources/screenshot/alipay.jpg)  | ![wxpay.jpg](resources/screenshot/wxpay.jpg) |
