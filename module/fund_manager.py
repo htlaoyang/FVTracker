@@ -542,6 +542,21 @@ class FundManager:
                         continue
 
                     fund_code = fund["code"]
+                    # --- 关键修改：处理 latest_net_value ---
+                    raw_nv = fund.get("latest_net_value")
+                    # 如果是 0.0 或 null，统一设为 None（即数据库 NULL）
+                    if raw_nv is None or (isinstance(raw_nv, (int, float)) and abs(raw_nv) < 1e-6):
+                        latest_net_value = None
+                    else:
+                        latest_net_value = float(raw_nv) if isinstance(raw_nv, (int, float)) else None
+    
+                    # --- 其他字段 ---
+                    is_hold = bool(fund.get("is_hold", False))
+                    cost = float(fund["cost"]) if fund.get("cost") not in (None, "") else None
+                    shares = float(fund["shares"]) if fund.get("shares") not in (None, "") else None
+                    rise_alert = float(fund["rise_alert"]) if fund.get("rise_alert") not in (None, "") else None
+                    fall_alert = float(fund["fall_alert"]) if fund.get("fall_alert") not in (None, "") else None
+    
                     # 检查基金是否已存在
                     cursor.execute("SELECT code FROM funds WHERE code = ?", (fund_code,))
                     if cursor.fetchone():
@@ -560,8 +575,8 @@ class FundManager:
                         # 新增基金
                         cursor.execute('''
                             INSERT INTO funds 
-                            (code, name, latest_net_value, is_hold, cost, shares, rise_alert, fall_alert) # 新增：字段
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?) # 新增：占位符
+                            (code, name, latest_net_value, is_hold, cost, shares, rise_alert, fall_alert)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (fund_code, fund["name"], fund.get("latest_net_value"),
                               1 if fund.get("is_hold", False) else 0,
                               fund.get("cost"), fund.get("shares"),

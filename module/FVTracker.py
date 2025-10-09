@@ -47,8 +47,13 @@ plt.rcParams["axes.unicode_minus"] = False
 class FVTracker:
     def __init__(self, root):
         # 软件版本配置
-        self.software_version = "V1.1.7   by htlaoyang"
+        self.software_version = "V1.1.8   by htlaoyang"
         self.version_update_log = """
+V1.1.8 更新内容：
+  1. 基金监控列表增加汇总盈亏
+  2. 修正导出后导入报错
+  3. 删除基金，基金监控列表同步刷新
+  4. 修正重置数据库后，没有备份库及初始库 		
 V1.1.7 更新内容：
   1. 增加版本升级控制
   2. 增加基金涨跌监控提醒
@@ -78,7 +83,9 @@ V1.1.1 更新内容：
         self.log_dir = "logs"            # 可配置
 		
         self.default_headers = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"
-        
+        self._now_func = None
+        self.summary_item_id = "TOTAL_SUMMARY_ROW" 
+		
         # 常用指数列表
         self.indices = [
             {"code": "000001", "name": "上证指数", "value": 0, "change": 0, "change_rate": 0},
@@ -118,24 +125,17 @@ V1.1.1 更新内容：
         self.current_display_data = {}  # 格式: {fund_code: {column_index: value, ...}}
         self.code_to_item_id = {}  # 基金代码与Treeview行ID的映射
 		
-        def refresh_funds():
-            """主程序刷新基金数据的回调"""
-            self.funds = self.fund_manager.load_funds_data()
-
-        def update_main_fund_list():
-            """主程序更新监控列表的回调"""
-            self.update_fund_list()
-
-        # 实例化FundManager
+        # 实例化FundManager 回调注册
         self.fund_manager = FundManager(
             root=self.root,
             status_var=self.status_var,
-            refresh_funds_cb=refresh_funds,
-            update_main_list_cb=update_main_fund_list
+            refresh_funds_cb=self._refresh_funds_callback,
+            update_main_list_cb=self._update_main_list_callback
         )
 
+
         # 加载基金数据（通过FundManager）
-        refresh_funds()
+        self._refresh_funds_callback()  # 加载数据
         self.load_settings()
         self.initialize_main_table_if_empty()  # 初始化主表空数据
         
@@ -152,8 +152,13 @@ V1.1.1 更新内容：
     def set_now_func(self, func):
         """设置当前时间函数（用于测试）"""
         self._now_func = func
+		
+    def _refresh_funds_callback(self):
+        self.funds = self.fund_manager.load_funds_data()
 
-
+    def _update_main_list_callback(self):
+        self.update_fund_list()
+		
     def initialize_main_table_if_empty(self):
         """初始化主表空数据（确保每日有基础记录）"""
         today = datetime.date.today().strftime('%Y-%m-%d')
@@ -798,17 +803,33 @@ V1.1.1 更新内容：
         
         self.canvas.draw()
 		
-    # 实现confirm_reset_database方法
     def confirm_reset_database(self):
         """确认重置数据库"""
         if messagebox.askyesno("确认", "确定要重置数据库吗？当前数据将被备份并创建新数据库。"):
-            secure_reset_database()
-            # 重新加载数据
-            self.load_funds_data()
-            self.update_fund_list()
-            self.update_existing_funds_list()
-            messagebox.showinfo("完成", "数据库已重置并备份")
-		
+            if secure_reset_database():
+                #提示用户重启
+                messagebox.showinfo(
+                    "重置完成",
+                    "数据库已重置并备份。\n\n"
+                    "请现在关闭并重新启动本程序，\n"
+                    "以完成数据库脚本升级。"
+                )
+                
+                # 3. 安全关闭程序
+                self.root.quit()   # 停止主循环
+                self.root.destroy()  # 销毁窗口
+                ##让 FundManager 重新加载数据（更新其内部 self.funds）
+                #self.fund_manager.load_funds_data()
+				#
+				#
+                ##触发 UI 刷新（通过回调）
+                #self.fund_manager.refresh_funds_cb()        # 刷新主页面
+                #self.fund_manager.update_main_list_cb()     # 更新监控列表
+                #self.fund_manager._refresh_existing_funds_list() #刷新基金管理 Tab 的「已添加基金列表」
+				#
+                #messagebox.showinfo("完成", "数据库已重置并备份")
+            else:
+                messagebox.showerror("错误", "数据库重置失败")
 
     def load_settings(self):
         """加载设置"""
@@ -849,6 +870,16 @@ V1.1.1 更新内容：
             return
         
         item = selected_items[0]
+        # 排除汇总行
+        if item == self.summary_item_id:
+            print("用户点击了汇总行，不加载基金详情")
+            self.selected_fund = None
+            self.clear_chart()          # 可选：清空图表
+            self.clear_history_tree()   # 清空历史列表
+            # 可选：在信息面板显示“汇总信息”提示
+            self.update_info_panel()    # 如果你希望 info panel 显示“已选中汇总”也可以定制
+            return
+        
         fund_code = self.fund_tree.item(item, "values")[1]
         self.selected_fund = next((f for f in self.funds if f["code"] == fund_code), None)
         
@@ -1074,11 +1105,18 @@ V1.1.1 更新内容：
         plt.xticks(rotation=45)
         self.fig.tight_layout()
         self.canvas.draw()
+
     def update_fund_list(self):
-        """增量更新基金列表（只更新变化的单元格，保留列表结构）"""
+        """增量更新基金列表（添加、更新、删除）"""
         today = datetime.date.today().strftime('%Y-%m-%d')
         updated = False
-        
+    
+        # 当前所有基金代码集合
+        current_fund_codes = {fund["code"] for fund in self.funds}
+		
+		
+    
+        #更新或插入现有基金 ===
         for fund in self.funds:
             fund_code = fund["code"]
             main_table_data = self.get_main_table_today_latest(fund_code, today)
@@ -1087,29 +1125,37 @@ V1.1.1 更新内容：
             hold_mark = "✓" if fund["is_hold"] else ""
             cost = f"{fund['cost']:.4f}" if (fund["is_hold"] and fund["cost"]) else "-"
             shares = f"{fund['shares']:.2f}" if (fund["is_hold"] and fund["shares"]) else "-"
-            
+    
             unit_net_value = "-"
             realtime_estimate = "-"
             change_rate = "-"
             realtime_profit = "-"
             tag = ""
-            
+    
             latest_detail = self.get_latest_detail_from_db(fund_code, today)
             if latest_detail:
                 realtime_estimate = f"{latest_detail['value']:.4f}"
                 change_rate = f"{latest_detail['rate']:.2f}%"
                 tag = "up" if latest_detail['rate'] >= 0 else "down"
+				
+            if main_table_data and 'realtime_profit' in main_table_data:
+                fund['realtime_profit'] = float(main_table_data['realtime_profit']) if main_table_data['realtime_profit'] is not None else 0.0
+            else:
+                fund['realtime_profit'] = 0.0
             
+            # 后续用于界面显示（字符串格式）
+            realtime_profit_display = f"{fund['realtime_profit']:.2f}" if abs(fund['realtime_profit']) >= 0.01 else "0.00"
+		
             if main_table_data:
                 unit_net_value = f"{main_table_data['unit_net_value']:.4f}" if main_table_data['unit_net_value'] else "-"
-                realtime_profit = f"{main_table_data['realtime_profit']:.2f}" if main_table_data['realtime_profit'] else "-"
             else:
                 unit_net_value = f"{fund['latest_net_value']:.4f}" if fund["latest_net_value"] else "-"
-            
-			#获取提醒阈值（新增）
+    
+            # 获取提醒阈值（新增）
             rise_alert = f"{fund['rise_alert']:.2f}%" if fund.get("rise_alert") not in (None, 0) else "-"
             fall_alert = f"{fund['fall_alert']:.2f}%" if fund.get("fall_alert") not in (None, 0) else "-"
-            # 组装显示数据（与列索引对应）
+    
+            # 组装显示数据
             new_values = {
                 0: hold_mark,
                 1: fund["code"],
@@ -1119,27 +1165,27 @@ V1.1.1 更新内容：
                 5: change_rate,
                 6: cost,
                 7: shares,
-                8: realtime_profit,
+                8: realtime_profit_display,
                 9: rise_alert,
                 10: fall_alert,
             }
-            
+    
             # 增量更新逻辑
             if fund_code in self.code_to_item_id:
-                # 已有该行，只更新变化的单元格
+                # 已存在，只更新变化的列
                 item_id = self.code_to_item_id[fund_code]
                 old_values = self.current_display_data.get(fund_code, {})
-                
+    
                 for col_idx, new_val in new_values.items():
                     if old_values.get(col_idx) != new_val:
                         self.fund_tree.set(item_id, col_idx, new_val)
                         updated = True
-                
+    
                 # 更新标签（涨跌幅颜色）
                 current_tags = self.fund_tree.item(item_id, "tags")
                 if tag not in current_tags:
                     self.fund_tree.item(item_id, tags=(tag,))
-                    
+    
                 # 更新缓存
                 self.current_display_data[fund_code] = new_values
             else:
@@ -1148,12 +1194,87 @@ V1.1.1 更新内容：
                 self.code_to_item_id[fund_code] = item_id
                 self.current_display_data[fund_code] = new_values
                 updated = True
-        
+    
+        #删除已不存在的基金 ===
+        codes_to_remove = []
+        for fund_code in self.code_to_item_id:
+            if fund_code not in current_fund_codes:
+                item_id = self.code_to_item_id[fund_code]
+                self.fund_tree.delete(item_id)  # 从 Treeview 删除
+                codes_to_remove.append(fund_code)
+                updated = True
+    
+        # 清理缓存
+        for fund_code in codes_to_remove:
+            self.code_to_item_id.pop(fund_code, None)
+            self.current_display_data.pop(fund_code, None)
+    
         # 保持标签样式配置
         self.fund_tree.tag_configure("up", foreground="red")
         self.fund_tree.tag_configure("down", foreground="green")
-        
+		
+        # 更新并插入汇总行
+        self.insert_or_update_summary_row()
+    
         return updated
+		
+    def insert_or_update_summary_row(self):
+        """插入或更新汇总行"""
+        total_profit = 0.0
+        hold_count = 0
+    
+        # 直接遍历funds，避免依赖 UI 字符串
+        for fund in self.funds:
+            # 兼容多种字段名和类型
+            is_hold = fund.get('is_hold') or fund.get('hold')
+            shares = fund.get('shares') or fund.get('hold_shares', 0)
+            profit = fund.get('realtime_profit', 0.0)
+    
+            # 转换 is_hold 为布尔值
+            is_holding = bool(is_hold) and is_hold not in (0, '0', '', 'False', 'false', None)
+    
+            # 调试打印
+            print(f"基金: {fund.get('name', '未知')}, 持有: {is_holding}, 份额: {shares}, 盈亏: {profit}")
+    
+            if is_holding and shares > 0:
+                total_profit += profit
+                hold_count += 1
+    
+        print(f"汇总完成：共 {hold_count} 只基金，总盈亏: ¥{total_profit:,.2f}")
+        # 格式化显示
+        if total_profit >= 0:
+            total_text = f"¥{total_profit:,.2f}"
+        else:
+            total_text = f"¥{total_profit:,.2f}"
+    
+    
+        # 汇总行显示内容
+        summary_values = (
+            "",  # 持有
+            "盈亏合计",  # 基金代码
+            f"共持有 {hold_count} 只基金",  # 基金名称
+            "", "", "", "", "",  # 单位净值 到 持有份额
+            total_text,  # 当日盈亏合计
+            "", ""  # 上涨/下跌提醒
+        )
+    
+        # 检查是否已存在
+        if self.summary_item_id in self.fund_tree.get_children():
+            self.fund_tree.item(self.summary_item_id, values=summary_values)
+        else:
+            self.fund_tree.insert(
+                "", 
+                tk.END, 
+                iid=self.summary_item_id,  # 固定 ID
+                values=summary_values,
+                tags=("summary",)
+            )
+    
+        # 可选：滚动到底部看到汇总（如果列表很长）
+        # self.fund_tree.see(self.summary_item_id)
+    
+        # 可选：禁止选中
+        self.fund_tree.selection_remove(self.summary_item_id)
     def get_latest_detail_from_db(self, fund_code, date):
         """从明细表获取最新的估值数据"""
         try:
@@ -1268,69 +1389,69 @@ V1.1.1 更新内容：
         self._write_log("监控已启动")
         self.root.after(100, self.perform_periodic_refresh)
 			
+		
     def perform_periodic_refresh(self):
         if not self.is_monitoring:
             return
     
-        try:
-            now = self.get_now()
-            current_time = now.time()
+        now = self.get_now()
+        current_time = now.time()
     
-            # --- 1. 检查是否在交易时段 ---
-            if not self.is_trading_time():
-                # 判断是“盘前”还是“盘后”
-                if current_time < datetime.time(9, 30):
-                    # 🕐 盘前：计算到 9:30 的等待时间
-                    wait_until = now.replace(hour=9, minute=30, second=0, microsecond=0)
-                    if wait_until < now:  # 防止跨日错误
-                        wait_until += datetime.timedelta(days=1)
-                    
-                    wait_seconds = (wait_until - now).total_seconds()
-                    wait_ms = int(wait_seconds * 1000)
-                    
-                    status_msg = f"⏳ 等待开盘... {wait_until.strftime('%H:%M:%S')} 开始刷新"
-                    self.status_var.set(status_msg)
-                    self._write_log(f"盘前等待，将在 {wait_until.strftime('%H:%M:%S')} 开始首次刷新")
-                    
-                    #调度到 9:30 执行
-                    self.root.after(wait_ms, self.perform_periodic_refresh)
-                    return
-    
-                else:
-                    #盘后：15:00 之后，今日结束
-                    self.status_var.set("今日监控结束，明天再见")
-                    self._write_log("今日监控结束")
-                    self.is_monitoring = False
-                    return
-    
-            # --- 2. 交易时段内：执行刷新 ---
-            self._write_log(f"开始刷新数据 @ {now.strftime('%H:%M:%S')}")
-            success_count, fail_count = self.refresh_all_funds(force=False)
-            
-            self.update_fund_list()
-            if self.selected_fund:
-                self.update_history_tree()
-                self.update_chart()
-    
-            next_refresh_dt = self.calculate_next_refresh_time()
-            status_msg = (
-                f"刷新完成 | 成功:{success_count} 失败:{fail_count} | "
-                f"下次: {next_refresh_dt.strftime('%H:%M')}"
-            )
-            self.status_var.set(status_msg)
-            self._write_log(status_msg)
-    
-            # --- 3. 调度下一次刷新 ---
-            wait_seconds = (next_refresh_dt - self.get_now()).total_seconds()
-            if wait_seconds > 0:
-                self.root.after(int(wait_seconds * 1000), self.perform_periodic_refresh)
+        # --- 1. 检查是否在交易时段 ---
+        if not self.is_trading_time(now):
+            if current_time < datetime.time(9, 30):
+                # 等待开盘...
+                wait_until = now.replace(hour=9, minute=30, second=0, microsecond=0)
+                if wait_until < now:
+                    wait_until += datetime.timedelta(days=1)
+                wait_ms = int((wait_until - now).total_seconds() * 1000)
+                self.status_var.set(f"⏳ 等待开盘... {wait_until.strftime('%H:%M:%S')}")
+                self.root.after(wait_ms, self.perform_periodic_refresh)
             else:
-                self.root.after(1000, self.perform_periodic_refresh)
+                self.status_var.set("今日监控结束，明天再见")
+                self.is_monitoring = False
+            return
+    
+        #启动后台线程执行刷新
+        threading.Thread(target=self._refresh_worker, args=(now,), daemon=True).start()
+    
+    def _refresh_worker(self, trigger_time: datetime.datetime):
+        """在后台线程中执行耗时操作"""
+        try:
+            self._write_log(f"开始刷新数据 @ {trigger_time.strftime('%H:%M:%S')}")
+    
+            #所有耗时操作放在这里：网络请求、计算等
+            success_count, fail_count = self.refresh_all_funds(force=False)
+    
+            #所有 UI 更新通过 after 回主线程
+            self.root.after(0, self.update_fund_list)
+            if self.selected_fund:
+                self.root.after(0, self.update_history_tree)
+                self.root.after(0, self.update_chart)
+    
+            #在主线程执行“刷新完成”逻辑
+            next_refresh_dt = self.calculate_next_refresh_time()
+            status_msg = f"刷新完成 | 成功:{success_count} 失败:{fail_count} | 下次: {next_refresh_dt.strftime('%H:%M')}"
+            
+            def on_main_thread():
+                self.status_var.set(status_msg)
+                self._write_log(status_msg)
+                #重新调度下一次
+                now = self.get_now()
+                wait_seconds = (next_refresh_dt - now).total_seconds()
+                if wait_seconds > 0:
+                    self.root.after(int(wait_seconds * 1000), self.perform_periodic_refresh)
+                else:
+                    self.root.after(1000, self.perform_periodic_refresh)
+    
+            self.root.after(0, on_main_thread)
     
         except Exception as e:
-            self._write_log( f"刷新异常: {e}10秒后重试",'error')
-            self.root.after(10000, self.perform_periodic_refresh)  # 10秒后重试
-			
+            error_msg = f"刷新异常: {e}，10秒后重试"
+            self._write_log(error_msg, 'error')
+            #异常后也回主线程重试
+            self.root.after(10000, self.perform_periodic_refresh)
+    		
     def is_trading_time(self, check_time: datetime.datetime = None) -> bool:
         now = check_time if check_time else self.get_now()
         if now.weekday() >= 5:  # 周六日

@@ -464,7 +464,7 @@ class FundHistoryViewer:
             max_val = max(values)
             avg_val = sum(values) / len(values)
     
-            # 🔧 加仓策略配置：回撤比例与资金分配
+            # 加仓策略配置：回撤比例与资金分配
             DCA_CONFIG = [
                 {"label": "首次建仓", "desc": "0.00%", "drop": 0.00, "funds_ratio": 0.10, "color": "🟡"},
                 {"label": "第一次加仓", "desc": "跌≥5%", "drop": 0.05, "funds_ratio": 0.20, "color": "🟢"},

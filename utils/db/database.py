@@ -7,7 +7,12 @@ import os
 from contextlib import contextmanager
 from datetime import datetime
 from config import DB_FILE, BACKUP_DIR
+from utils.logger import write_log 
 
+
+def db_log(message: str):
+    """数据库专用日志记录，输出到 logs/dblogs/ 目录"""
+    write_log(message, log_dir="logs/dblogs", prefix="")
 
 @contextmanager
 def db_connection():
@@ -17,7 +22,7 @@ def db_connection():
     # 创建连接
     conn = sqlite3.connect(DB_FILE)
     
-    # ✅ 关键：启用 WAL 模式
+    # 关键：启用 WAL 模式
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA synchronous = NORMAL")
     conn.execute("PRAGMA foreign_keys = ON")
@@ -30,22 +35,6 @@ def db_connection():
         raise
     finally:
         conn.close()  # 确保关闭
-# 数据库连接上下文管理器
-@contextmanager
-def db_connection1():
-    """提供数据库连接上下文，自动提交或回滚"""
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row  # 支持按列名访问
-    cursor = conn.cursor()
-    try:
-        yield cursor
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        print(f"数据库操作错误: {e}")
-        raise
-    finally:
-        conn.close()
 
 def init_database():
     """初始化数据库表结构"""
@@ -109,24 +98,40 @@ def init_database():
         # 初始化默认刷新间隔
         cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
                        ("refresh_interval", "5"))
-
+					   
 def secure_reset_database():
     """安全重置数据库：备份旧数据，创建新空库"""
     try:
-        if os.path.exists(DB_FILE):
-            # 生成备份文件名
+        # 确保备份目录存在
+        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+
+        if DB_FILE.exists():
             backup_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_file = os.path.join(BACKUP_DIR, f"fund_data_backup_{backup_time}.db")
+            backup_file = BACKUP_DIR / f"fund_data_backup_{backup_time}.db"
+            
             # 执行备份
             shutil.copy2(DB_FILE, backup_file)
-            print(f"数据库已备份至: {backup_file}")
+            # 同时打印到控制台和日志文件
+            log_msg = f"数据库已备份至: {backup_file}"
+            print(log_msg)
+            db_log(log_msg)  # 使用专用日志函数
+
             # 删除原数据库
-        if os.path.exists(DB_FILE):
-            os.remove(DB_FILE)
+            DB_FILE.unlink()
+            log_msg = f"原数据库已删除: {DB_FILE}"
+            print(log_msg)
+            db_log(log_msg)  # 使用专用日志函数
+
         # 重新初始化空数据库
-        init_database()
-        print("已创建新的空数据库")
+        init_database()  # 此函数内部也会调用 db_log
+        log_msg = "新的空数据库已创建"
+        print(log_msg)
+        db_log(log_msg)  # 使用专用日志函数
         return True
+
     except Exception as e:
-        print(f"数据库重置错误: {e}")
-        return False
+        error_msg = f"数据库重置失败: {e}"
+        print(error_msg)
+        db_log(error_msg)  # 使用专用日志函数
+        return False		
+
