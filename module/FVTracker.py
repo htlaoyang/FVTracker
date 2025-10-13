@@ -402,7 +402,7 @@ V1.1.1 更新内容：
         self.fund_tree.column("change_rate", width=90, anchor="e")
         self.fund_tree.column("hold_cost", width=80, anchor="e")
         self.fund_tree.column("hold_shares", width=90, anchor="e")
-        self.fund_tree.column("realtime_profit", width=80, anchor="e")
+        self.fund_tree.column("realtime_profit", width=90, anchor="e")
         self.fund_tree.column("rise_alert", width=100, anchor="center")
         
         self.fund_tree.column("fall_alert", width=100, anchor="center")       
@@ -498,12 +498,30 @@ V1.1.1 更新内容：
         # 更新基金列表
         self.update_fund_list()
 
+
     def setup_styles(self):
-        """设置界面样式，使历史表格表头与基金列表样式统一"""
+        """设置界面样式，支持可配置字体大小，历史表格与基金列表样式统一"""
+        
+        # 读取配置的字体大小，带默认值和最小值限制
+        try:
+            with open('config.json', 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                font_size = config.get('ui', {}).get('font_size', 10)
+        except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError):
+            font_size = 12  # 默认值
+        
+        # 保证最小字体为 10
+        FONT_SIZE = max(10, int(font_size))
+        
+        # 全局字体
+        DEFAULT_FONT = (AVAILABLE_CHINESE_FONT, FONT_SIZE)
+        BOLD_FONT = (AVAILABLE_CHINESE_FONT, FONT_SIZE, 'bold')
+        HEADER_FONT = (AVAILABLE_CHINESE_FONT, FONT_SIZE, 'bold')
+    
         style = ttk.Style()
         
         # 基础样式
-        style.configure(".", font=('SimHei', 10))
+        style.configure(".", font=DEFAULT_FONT)
         
         # 卡片样式
         style.configure("Card.TFrame", 
@@ -519,7 +537,7 @@ V1.1.1 更新内容：
         
         # 标题样式
         style.configure("SectionTitle.TLabel",
-                       font=('SimHei', 11, 'bold'),
+                       font=BOLD_FONT,
                        foreground="#2c3e50",
                        padding=(0, 5, 0, 5))
         
@@ -532,53 +550,36 @@ V1.1.1 更新内容：
                        anchor=tk.W)
         
         # 指数样式
-        style.configure("IndexName.TLabel",
-                       font=('SimHei', 10, 'bold'),
-                       foreground="#34495e")
+        style.configure("IndexName.TLabel", font=BOLD_FONT, foreground="#34495e")
+        style.configure("IndexValue.TLabel", font=DEFAULT_FONT, foreground="#2c3e50")
+        style.configure("IndexUp.TLabel", font=BOLD_FONT, foreground="#e74c3c")
+        style.configure("IndexDown.TLabel", font=BOLD_FONT, foreground="#2ecc71")
+        style.configure("IndexFlat.TLabel", font=DEFAULT_FONT, foreground="#7f8c8d")
         
-        style.configure("IndexValue.TLabel",
-                       font=('SimHei', 10),
-                       foreground="#2c3e50")
-        
-        style.configure("IndexUp.TLabel",
-                       font=('SimHei', 10, 'bold'),
-                       foreground="#e74c3c")  # 红色表示上涨
-        
-        style.configure("IndexDown.TLabel",
-                       font=('SimHei', 10, 'bold'),
-                       foreground="#2ecc71")  # 绿色表示下跌
-        
-        style.configure("IndexFlat.TLabel",
-                       font=('SimHei', 10),
-                       foreground="#7f8c8d")  # 灰色表示持平
-        
-        # 基金列表树状图样式 - 基础样式定义
+        # 统一树状图基础样式
         base_tree_style = {
             "rowheight": 25,
             "fieldbackground": "#ffffff",
             "background": "#ffffff",
             "foreground": "#333333",
-            "font": ('SimHei', 10)
+            "font": DEFAULT_FONT
         }
         
-        # 表头基础样式定义
         base_header_style = {
-            "font": ('SimHei', 10, 'bold'),
-            "background": "#f1c40f",  # 统一的表头背景色
-            "foreground": "#2c3e50",  # 统一的表头文字色
+            "font": HEADER_FONT,
+            "background": "#f1c40f",
+            "foreground": "#2c3e50",
             "padding": (5, 3),
             "bordercolor": "#e6b800",
             "borderwidth": 1,
             "relief": tk.RAISED
         }
         
-        # 表头交互样式定义
         base_header_map = {
             "background": [('active', '#f8d775'), ('pressed', '#e6b800')],
             "foreground": [('active', '#2c3e50'), ('pressed', '#2c3e50')]
         }
         
-        # 表格行交互样式定义
         base_row_map = {
             "background": [
                 ('selected', '#ffeaa7'),
@@ -596,16 +597,15 @@ V1.1.1 更新内容：
             ]
         }
         
-        # 基金列表树状图样式 - 应用基础样式
+        # 应用到基金列表和历史表格
         style.configure("FundTree.Treeview", **base_tree_style)
-        style.configure("FundTree.Treeview.Heading",** base_header_style)
+        style.configure("FundTree.Treeview.Heading", **base_header_style)
         style.map("FundTree.Treeview.Heading", **base_header_map)
-        style.map("FundTree.Treeview",** base_row_map)
+        style.map("FundTree.Treeview", **base_row_map)
         
-        # 历史表格样式 - 与基金列表保持一致
-        style.configure("HistoryTree.Treeview",** base_tree_style)
+        style.configure("HistoryTree.Treeview", **base_tree_style)
         style.configure("HistoryTree.Treeview.Heading", **base_header_style)
-        style.map("HistoryTree.Treeview.Heading",** base_header_map)
+        style.map("HistoryTree.Treeview.Heading", **base_header_map)
         style.map("HistoryTree.Treeview", **base_row_map)
         
         # 滚动条样式
@@ -1208,13 +1208,19 @@ V1.1.1 更新内容：
         for fund_code in codes_to_remove:
             self.code_to_item_id.pop(fund_code, None)
             self.current_display_data.pop(fund_code, None)
+
+        # 更新汇总行（确保它在最后一行）
+        # 先删除再插入，确保位置正确
+        if self.summary_item_id in self.fund_tree.get_children():
+            self.fund_tree.delete(self.summary_item_id)
+    
+        # 重新插入到最后
+        self.insert_or_update_summary_row()
     
         # 保持标签样式配置
         self.fund_tree.tag_configure("up", foreground="red")
         self.fund_tree.tag_configure("down", foreground="green")
-		
-        # 更新并插入汇总行
-        self.insert_or_update_summary_row()
+
     
         return updated
 		
@@ -1234,13 +1240,13 @@ V1.1.1 更新内容：
             is_holding = bool(is_hold) and is_hold not in (0, '0', '', 'False', 'false', None)
     
             # 调试打印
-            print(f"基金: {fund.get('name', '未知')}, 持有: {is_holding}, 份额: {shares}, 盈亏: {profit}")
+            #print(f"基金: {fund.get('name', '未知')}, 持有: {is_holding}, 份额: {shares}, 盈亏: {profit}")
     
             if is_holding and shares > 0:
                 total_profit += profit
                 hold_count += 1
     
-        print(f"汇总完成：共 {hold_count} 只基金，总盈亏: ¥{total_profit:,.2f}")
+        #print(f"汇总完成：共 {hold_count} 只基金，总盈亏: ¥{total_profit:,.2f}")
         # 格式化显示
         if total_profit >= 0:
             total_text = f"¥{total_profit:,.2f}"
@@ -1351,6 +1357,7 @@ V1.1.1 更新内容：
             print(f"获取实时估值出错: {str(e)}")
             return None
 
+
     def generate_trading_time_points(self, date, interval_minutes):
         """生成交易时段内的所有刷新时间点（含收盘15:00）"""
         time_points = []
@@ -1405,10 +1412,12 @@ V1.1.1 更新内容：
                 if wait_until < now:
                     wait_until += datetime.timedelta(days=1)
                 wait_ms = int((wait_until - now).total_seconds() * 1000)
-                self.status_var.set(f"⏳ 等待开盘... {wait_until.strftime('%H:%M:%S')}")
+                self.status_var.set(f"等待开盘... {wait_until.strftime('%H:%M:%S')}")
+                self._write_log(f"盘前等待，将在 {wait_until.strftime('%H:%M:%S')} 开始刷新")
                 self.root.after(wait_ms, self.perform_periodic_refresh)
             else:
                 self.status_var.set("今日监控结束，明天再见")
+                self._write_log("今日监控结束")
                 self.is_monitoring = False
             return
     
