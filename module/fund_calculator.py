@@ -152,7 +152,7 @@ class FundCostCalculator:
         ttk.Entry(input_row_frame, textvariable=self.input_var, width=18).pack(side="left", padx=(5, 0))
 
         # 刷新按钮
-        refresh_btn = ttk.Button(input_row_frame, text="🔄 刷新估值", width=12, command=self.refresh_current_estimate)
+        refresh_btn = ttk.Button(input_row_frame, text="刷新估值", width=12, command=self.refresh_current_estimate)
         refresh_btn.pack(side="right", padx=(10, 0))
 
         # === 自动填充提示标签 ===
@@ -279,7 +279,7 @@ class FundCostCalculator:
     def update_auto_fill_label(self, current_value: float):
         """更新自动填充提示文字"""
         self.auto_fill_label.config(
-            text=f"📌 系统已自动填充可实现的最低摊薄成本：{current_value:.4f} 元"
+            text=f"系统已自动填充可实现的最低摊薄成本：{current_value:.4f} 元"
         )
 
     def clear_results(self):
