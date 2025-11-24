@@ -20,7 +20,7 @@ from utils.db.database import db_connection
 AVAILABLE_CHINESE_FONT = get_best_chinese_font()
 plt.rcParams["font.family"] = [AVAILABLE_CHINESE_FONT]
 plt.rcParams["axes.unicode_minus"] = False  # 解决负号显示问题
-
+UI_FONT_SIZE = 14  # 所有控件的统一字体大小
 # 数据库文件路径（与主程序保持一致）
 DB_FILE = "fund_data.db"
 
@@ -53,19 +53,24 @@ class FundHistoryViewer:
         self.load_history_main_records()
 
     def create_widgets(self):
+        """创建主界面控件，统一使用 grid 布局"""
         # 主框架
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # 1. 日期选择和导出区域
+    
+        # 控制区域：日期选择 + 操作按钮
         control_frame = ttk.Frame(main_frame)
         control_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        # 日期选择子区域
+    
+        # 设置列权重：控制两个区域的宽度比例
+        control_frame.columnconfigure(0, weight=4)  # 日期区域 占 40%
+        control_frame.columnconfigure(1, weight=6)  # 操作区域 占 60%
+    
+        # 日期选择区域
         date_frame = ttk.LabelFrame(control_frame, text="查询日期范围", padding="10")
-        date_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
-        # 开始日期
+        date_frame.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+    
+        # 使用 grid 在 date_frame 内布局
         ttk.Label(date_frame, text="开始日期:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
         self.start_date_var = tk.StringVar(value=self.start_date.strftime("%Y-%m-%d"))
         self.start_date_entry = ttk.Entry(date_frame, textvariable=self.start_date_var, width=12)
@@ -80,14 +85,17 @@ class FundHistoryViewer:
         # 查询按钮
         ttk.Button(date_frame, text="查询", command=self.on_query).grid(row=0, column=4, padx=10, pady=5)
         
-        # 导出按钮区域
-        export_frame = ttk.Frame(control_frame, padding="10")
-        export_frame.pack(side=tk.RIGHT)
-        
-        # 添加导出按钮
-        ttk.Button(export_frame, text="导出数据", command=self.export_data).pack(padx=10, pady=5)
-        
-        ttk.Button(export_frame, text="分析加仓策略", command=self.analyze_dca_strategy).pack(padx=10, pady=5)
+        # 操作按钮区域
+        export_frame = ttk.LabelFrame(control_frame, text="操作", padding="10")
+        export_frame.grid(row=0, column=1, sticky="ew")
+    
+        # 在 export_frame 内使用 grid 布局按钮（横向排列）
+        export_frame.columnconfigure(0, weight=1)
+        export_frame.columnconfigure(1, weight=1)
+        export_frame.columnconfigure(2, weight=1)
+    
+        ttk.Button(export_frame, text="导出数据", command=self.export_data).grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+        ttk.Button(export_frame, text="分析加仓策略", command=self.analyze_dca_strategy).grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 		
         # 2. 历史主记录表格
         main_record_frame = ttk.LabelFrame(main_frame, text="历史估值主记录", padding="10")
@@ -182,7 +190,7 @@ class FundHistoryViewer:
         # 设置表格样式
         self.setup_styles()
     
-    def setup_styles(self):
+    def setup_styles1(self):
         """设置表格样式"""
         style = ttk.Style()
         style.configure(".", font=(AVAILABLE_CHINESE_FONT, 10))
@@ -205,7 +213,44 @@ class FundHistoryViewer:
         self.detail_tree.tag_configure("up", foreground="red")
         self.detail_tree.tag_configure("down", foreground="green")
         self.detail_tree.tag_configure("close", font=(AVAILABLE_CHINESE_FONT, 10, 'bold'))
-    
+    def setup_styles(self):
+        """设置表格样式（使用全局字体大小）"""
+        style = ttk.Style()
+        
+        # 全局默认字体
+        style.configure(".", font=(AVAILABLE_CHINESE_FONT, UI_FONT_SIZE))
+        
+        # 主记录表格样式
+        row_height = UI_FONT_SIZE + 16  # 经验公式：行高 = 字号 + 10~16
+        style.configure(
+            "MainRecord.Treeview", 
+            font=(AVAILABLE_CHINESE_FONT, UI_FONT_SIZE),
+            rowheight=row_height
+        )
+        style.configure(
+            "MainRecord.Treeview.Heading", 
+            font=(AVAILABLE_CHINESE_FONT, UI_FONT_SIZE, 'bold'),
+            background="#f0f0f0"
+        )
+        
+        # 明细表格样式
+        style.configure(
+            "Detail.Treeview", 
+            font=(AVAILABLE_CHINESE_FONT, UI_FONT_SIZE),
+            rowheight=row_height
+        )
+        style.configure(
+            "Detail.Treeview.Heading", 
+            font=(AVAILABLE_CHINESE_FONT, UI_FONT_SIZE, 'bold'),
+            background="#f0f0f0"
+        )
+        
+        # 涨跌标签
+        self.main_record_tree.tag_configure("up", foreground="red")
+        self.main_record_tree.tag_configure("down", foreground="green")
+        self.detail_tree.tag_configure("up", foreground="red")
+        self.detail_tree.tag_configure("down", foreground="green")
+        self.detail_tree.tag_configure("close", font=(AVAILABLE_CHINESE_FONT, UI_FONT_SIZE, 'bold'))
     def on_query(self):
         """根据日期范围查询历史记录"""
         try:
@@ -233,17 +278,19 @@ class FundHistoryViewer:
             self.main_record_tree.delete(item)
         
         try:
-            with db_connection() as cursor:
-                cursor.execute('''
-                SELECT trade_date, unit_net_value, realtime_estimate, change_rate, realtime_profit 
-                FROM fund_estimate_main 
-                WHERE fund_code = ? AND trade_date BETWEEN ? AND ?
-                ORDER BY trade_date DESC
-                ''', (self.fund_code, 
-                      self.start_date.strftime("%Y-%m-%d"),
-                      self.end_date.strftime("%Y-%m-%d")))
+            with db_connection() as conn:
+                result = conn.execute('''
+                    SELECT trade_date, unit_net_value, realtime_estimate, change_rate, realtime_profit 
+                    FROM fund_estimate_main 
+                    WHERE fund_code = ? AND trade_date BETWEEN ? AND ?
+                    ORDER BY trade_date DESC
+                ''', (
+                    self.fund_code,
+                    self.start_date.strftime("%Y-%m-%d"),
+                    self.end_date.strftime("%Y-%m-%d")
+                ))
                 
-                records = cursor.fetchall()
+                records = result.fetchall()
                 
                 for record in records:
                     trade_date, unit_net_value, realtime_estimate, change_rate, realtime_profit = record
@@ -256,7 +303,7 @@ class FundHistoryViewer:
                     
                     # 设置涨跌标签
                     tag = ""
-                    if change_rate:
+                    if change_rate is not None:
                         tag = "up" if change_rate >= 0 else "down"
                     
                     self.main_record_tree.insert("", tk.END, 
@@ -300,15 +347,15 @@ class FundHistoryViewer:
             self.detail_tree.delete(item)
         
         try:
-            with db_connection() as cursor:
-                cursor.execute('''
-                SELECT estimate_time, realtime_estimate, change_rate, is_close_data 
-                FROM fund_estimate_details 
-                WHERE fund_code = ? AND trade_date = ?
-                ORDER BY estimate_time
+            with db_connection() as conn:
+                result = conn.execute('''
+                    SELECT estimate_time, realtime_estimate, change_rate, is_close_data 
+                    FROM fund_estimate_details 
+                    WHERE fund_code = ? AND trade_date = ?
+                    ORDER BY estimate_time
                 ''', (self.fund_code, trade_date))
                 
-                records = cursor.fetchall()
+                records = result.fetchall()
                 
                 for record in records:
                     estimate_time, realtime_estimate, change_rate, is_close_data = record
@@ -320,7 +367,7 @@ class FundHistoryViewer:
                     
                     # 设置标签
                     tags = []
-                    if change_rate:
+                    if change_rate is not None:  # ✅ 修复：使用 is not None 避免 0.0 被误判
                         tags.append("up" if change_rate >= 0 else "down")
                     if is_close_data:
                         tags.append("close")
@@ -329,7 +376,7 @@ class FundHistoryViewer:
                                           values=(estimate_time, realtime_estimate_str, 
                                                   change_rate_str, is_close_str),
                                           tags=tuple(tags))
-                       
+            
         except Exception as e:
             messagebox.showerror("错误", f"加载明细记录失败: {str(e)}")
     
@@ -338,15 +385,16 @@ class FundHistoryViewer:
         self.ax.clear()
         
         try:
-            with db_connection() as cursor:
-                cursor.execute('''
-                SELECT estimate_time, realtime_estimate 
-                FROM fund_estimate_details 
-                WHERE fund_code = ? AND trade_date = ?
-                ORDER BY estimate_time
+            with db_connection() as conn:
+                # 获取主数据
+                result = conn.execute('''
+                    SELECT estimate_time, realtime_estimate 
+                    FROM fund_estimate_details 
+                    WHERE fund_code = ? AND trade_date = ?
+                    ORDER BY estimate_time
                 ''', (self.fund_code, trade_date))
                 
-                records = cursor.fetchall()
+                records = result.fetchall()
                 
                 if not records or len(records) < 2:
                     self.ax.text(0.5, 0.5, "没有足够的数据绘制图表", 
@@ -367,20 +415,20 @@ class FundHistoryViewer:
                         times.append(time_obj)
                         values.append(realtime_estimate)
                     except ValueError:
-                        continue
+                        continue  # 跳过格式错误的时间
                 
-                # 绘制图表
+                # 绘制主趋势
                 self.ax.plot(times, values, 'b-', linewidth=2, label='估值走势')
                 self.ax.scatter(times, values, color='red', s=30, alpha=0.7)
                 
-                # 标记收盘点
-                cursor.execute('''
-                SELECT estimate_time, realtime_estimate 
-                FROM fund_estimate_details 
-                WHERE fund_code = ? AND trade_date = ? AND is_close_data = 1
+                # 查询并标记收盘点
+                close_result = conn.execute('''
+                    SELECT estimate_time, realtime_estimate 
+                    FROM fund_estimate_details 
+                    WHERE fund_code = ? AND trade_date = ? AND is_close_data = 1
                 ''', (self.fund_code, trade_date))
                 
-                close_data = cursor.fetchone()
+                close_data = close_result.fetchone()
                 if close_data:
                     close_time_str = f"{trade_date} {close_data[0]}"
                     try:
@@ -389,7 +437,7 @@ class FundHistoryViewer:
                                        color='green', s=80, alpha=0.8, 
                                        marker='*', label='收盘估值')
                     except ValueError:
-                        pass
+                        pass  # 时间解析失败则跳过
                 
                 # 设置图表属性
                 self.ax.set_title(f"{self.fund_name} {trade_date} 估值走势", fontsize=12)
@@ -397,7 +445,7 @@ class FundHistoryViewer:
                 self.ax.set_ylabel('估值 (元)', fontsize=10)
                 self.ax.grid(True, linestyle='--', alpha=0.7)
                 
-                # 设置x轴为时间格式
+                # 设置x轴时间格式
                 self.ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
                 plt.setp(self.ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
                 
@@ -439,7 +487,6 @@ class FundHistoryViewer:
         # 设置子窗口为模态
         self.root.transient(self.parent)
         self.root.grab_set()
-		
     def analyze_dca_strategy(self):
         """分析分批加仓策略：基于历史最低估值设定基点，按百分比下跌生成加仓档位"""
         try:
@@ -447,14 +494,13 @@ class FundHistoryViewer:
             end_date = self.end_date.strftime("%Y-%m-%d")
     
             # 获取历史估值数据（用于计算历史最低）
-            with db_connection() as cursor:
-                cursor.execute('''
+            with db_connection() as conn:
+                result  = conn.execute('''
                     SELECT realtime_estimate 
                     FROM fund_estimate_details 
                     WHERE fund_code = ? AND trade_date BETWEEN ? AND ?
                 ''', (self.fund_code, start_date, end_date))
-    
-                values = [row[0] for row in cursor.fetchall() if row[0] is not None]
+                values = [row[0] for row in result.fetchall() if row[0] is not None]
     
             if not values:
                 messagebox.showinfo("分析结果", "当前查询范围内无估值数据，无法分析。")
@@ -466,10 +512,10 @@ class FundHistoryViewer:
     
             # 加仓策略配置：回撤比例与资金分配
             DCA_CONFIG = [
-                {"label": "首次建仓", "desc": "0.00%", "drop": 0.00, "funds_ratio": 0.10, "color": "🟡"},
-                {"label": "第一次加仓", "desc": "跌≥5%", "drop": 0.05, "funds_ratio": 0.20, "color": "🟢"},
-                {"label": "第二次加仓", "desc": "跌≥10%", "drop": 0.10, "funds_ratio": 0.30, "color": "🔵"},
-                {"label": "第三次加仓", "desc": "跌≥15%", "drop": 0.15, "funds_ratio": 0.40, "color": "🟣"},
+                {"label": "首次建仓", "desc": "0.00%", "drop": 0.00, "funds_ratio": 0.10, "color": ""},
+                {"label": "第一次加仓", "desc": "跌≥5%", "drop": 0.05, "funds_ratio": 0.20, "color": ""},
+                {"label": "第二次加仓", "desc": "跌≥10%", "drop": 0.10, "funds_ratio": 0.30, "color": ""},
+                {"label": "第三次加仓", "desc": "跌≥15%", "drop": 0.15, "funds_ratio": 0.40, "color": ""},
             ]
     
             TOTAL_CAPITAL = 20000  # 总资金（可配置）
@@ -498,15 +544,15 @@ class FundHistoryViewer:
             latest_estimate = None
             intraday_low = None
     
-            # 优先从数据库获取当日所有估值
-            with db_connection() as cursor:
-                cursor.execute('''
+            # 从数据库获取当日所有估值
+            with db_connection() as conn:
+                result = conn.execute('''
                     SELECT realtime_estimate 
                     FROM fund_estimate_details 
                     WHERE fund_code = ? AND DATE(trade_date) = DATE('now')
-                    ORDER BY trade_date DESC
+                    ORDER BY estimate_time DESC
                 ''', (self.fund_code,))
-                today_values = [row[0] for row in cursor.fetchall() if row[0] is not None]
+                today_values = [row[0] for row in result.fetchall() if row[0] is not None]
     
                 if today_values:
                     latest_estimate = today_values[0]  # 最新一条
@@ -545,21 +591,21 @@ class FundHistoryViewer:
                             break
     
             # ==================== 构建分析文本 ====================
-            result = (
-                f"📊 基金分批加仓策略分析\n"
+            result_text = (
+                f"基金分批加仓策略分析\n"
                 f"────────────────────────────────\n"
                 f"基金代码：{self.fund_code}\n"
                 f"基金名称：{self.fund_name}\n"
                 f"查询区间：{start_date} 至 {end_date}\n"
                 f"数据量：{len(values):,} 个估值点\n"
-                f"📊 统计：最低={min_val:.4f}，最高={max_val:.4f}，平均={avg_val:.4f}\n\n"
+                f"统计：最低={min_val:.4f}，最高={max_val:.4f}，平均={avg_val:.4f}\n\n"
     
-                f"🎯 基准设定\n"
+                f"基准设定\n"
                 f"历史最低估值：{min_val:.4f}\n"
                 f"首次建仓区间：{min_val - 0.0050:.4f} ~ {min_val + 0.0050:.4f}\n"
                 f"后续加仓：基于历史最低估值每下跌一定比例触发\n\n"
     
-                f"📌 分批加仓建议（越跌越买）：\n"
+                f"分批加仓建议（越跌越买）：\n"
             )
     
             # 输出每一档
@@ -568,27 +614,27 @@ class FundHistoryViewer:
                     (level["desc"] == "0.00%" and (min_val - 0.0050) <= check_val <= (min_val + 0.0050)) or
                     (level["desc"] != "0.00%" and check_val <= level["threshold"])
                 )) else "○"
-                result += f"{mark} {level['color']} {level['label']}: {level['level_str']}\n"
+                result_text += f"{mark} {level['color']} {level['label']}: {level['level_str']}\n"
     
             # 显示盘中估值
-            result += f"\n🔍 盘中估值监测：\n"
+            result_text += f"\n盘中估值监测：\n"
             if latest_estimate is not None and intraday_low is not None:
-                result += f"  最新估值（Last）：{latest_estimate:.4f}\n"
-                result += f"  当日最低（Low）：{intraday_low:.4f}\n"
+                result_text += f"  最新估值（Last）：{latest_estimate:.4f}\n"
+                result_text += f"  当日最低（Low）：{intraday_low:.4f}\n"
                 if triggered_level:
-                    result += f"\n💡 强烈建议：盘中已触及【{triggered_level['label']}】区间！\n"
-                    result += f"   可考虑执行对应加仓操作。\n"
+                    result_text += f"\n强烈建议：盘中已触及【{triggered_level['label']}】区间！\n"
+                    result_text += f"   可考虑执行对应加仓操作。\n"
                 else:
-                    result += f"\n💡 建议：尚未进入加仓区间，继续观望。\n"
+                    result_text += f"\n建议：尚未进入加仓区间，继续观望。\n"
             elif latest_estimate is not None:
-                result += f"  当前估值：{latest_estimate:.4f}\n"
-                result += f"  💡 提示：暂无完整盘中数据，建议参考实时行情。\n"
+                result_text += f"  当前估值：{latest_estimate:.4f}\n"
+                result_text += f"  提示：暂无完整盘中数据，建议参考实时行情。\n"
             else:
-                result += f"  🔍 当前估值：获取失败\n"
+                result_text += f"  当前估值：获取失败\n"
     
-            # 💡 资金分配表示例（对齐优化版）
-            result += f"\n💡 总资金分配示例（假设总资金为 {TOTAL_CAPITAL:,} 元）\n"
-            result += "─────────────────────────────────────────────────────\n"
+            # 资金分配表示例（对齐优化版）
+            result_text += f"\n总资金分配示例（假设总资金为 {TOTAL_CAPITAL:,} 元）\n"
+            result_text += "─────────────────────────────────────────────────────\n"
     
             # 定义每列宽度（字符数）
             COL_STAGE = 14      # 阶段
@@ -596,14 +642,13 @@ class FundHistoryViewer:
             COL_INVEST = 18     # 投入资金
             COL_CUMULATIVE = 14 # 累计投入
     
-            # 表头
-            result += (
+            result_text += (
                 f"{'阶段':<{COL_STAGE}}"
                 f"{'触发条件（估值）':<{COL_CONDITION}}"
                 f"{'投入资金':<{COL_INVEST}}"
                 f"{'累计投入':<{COL_CUMULATIVE}}\n"
             )
-            result += "─────────────────────────────────────────────────────\n"
+            result_text += "─────────────────────────────────────────────────────\n"
     
             # 数据行
             cumulative = 0
@@ -614,21 +659,22 @@ class FundHistoryViewer:
                 amount_str = f"{int(invest):,}元 ({int(level['funds_ratio']*100)}%)"
                 cumul_str = f"{int(cumulative):,}元"
     
-                result += (
+                result_text += (
                     f"{level['label']:<{COL_STAGE}}"
                     f"{condition:<{COL_CONDITION}}"
                     f"{amount_str:<{COL_INVEST}}"
                     f"{cumul_str:<{COL_CUMULATIVE}}\n"
                 )
     
-            result += f"\n📌 说明：以历史最低估值 {min_val:.4f} 为锚点，越跌越买，逐步重仓。\n"
-            result += "💡 提示：本策略基于历史估值分析，仅供参考，投资需谨慎。"
+            result_text += f"\n说明：以历史最低估值 {min_val:.4f} 为锚点，越跌越买，逐步重仓。\n"
+            result_text += "提示：本策略基于历史估值分析，仅供参考，投资需谨慎。"
     
             # 显示结果
-            self._show_analysis_result("加仓策略分析结果", result)
+            self._show_analysis_result("加仓策略分析结果", result_text)
     
         except Exception as e:
             messagebox.showerror("分析失败", f"执行分析时发生错误：\n{str(e)}")
+
     def _show_analysis_result(self, title, text):
         """
         显示可复制的分析结果弹窗
@@ -665,7 +711,7 @@ class FundHistoryViewer:
         text_widget = tk.Text(
             frame,
             wrap=tk.WORD,
-            font=("Consolas", 10),  # ✅ 必须使用等宽字体
+            font=("Consolas", 10),  # 必须使用等宽字体
             bg="white",
             fg="black",
             relief="flat"
@@ -690,14 +736,14 @@ class FundHistoryViewer:
         # 复制按钮
         ttk.Button(
             button_frame,
-            text="📋 复制全部",
+            text="复制全部",
             command=lambda: self._copy_to_clipboard(text)
         ).pack(side=tk.LEFT, padx=5)
     
         # 关闭按钮
         ttk.Button(
             button_frame,
-            text="✅ 关闭",
+            text=" 关闭",
             command=dialog.destroy
         ).pack(side=tk.RIGHT, padx=5)
     

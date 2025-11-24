@@ -28,7 +28,7 @@ def db_connection():
     conn.execute("PRAGMA foreign_keys = ON")
 
     try:
-        yield conn.cursor()
+        yield conn
         conn.commit()
     except Exception as e:
         conn.rollback()
