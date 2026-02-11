@@ -4,12 +4,16 @@ import tkinter as tk
 import sqlite3
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import requests
+import time
+from dateutil.relativedelta import relativedelta
+
 
 from tkinter import ttk, messagebox, simpledialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from datetime import datetime, timedelta
 from tkinter.filedialog import asksaveasfilename
-
+from utils.logger import write_log
 
 # 导入中文字体设置
 from utils.sys_chinese_font import get_best_chinese_font
@@ -42,9 +46,9 @@ class FundHistoryViewer:
         self.fund_name = fund_name
         self.selected_main_record = None
         
-        # 设置默认日期范围（结束日期为今天，开始日期为一个月前）
+        # 设置默认日期范围：结束日期为今天，开始日期为5年前
         self.end_date = datetime.today()
-        self.start_date = self.end_date - timedelta(days=30)
+        self.start_date = self.end_date - relativedelta(years=5)
         
         # 创建界面
         self.create_widgets()
@@ -189,30 +193,7 @@ class FundHistoryViewer:
         
         # 设置表格样式
         self.setup_styles()
-    
-    def setup_styles1(self):
-        """设置表格样式"""
-        style = ttk.Style()
-        style.configure(".", font=(AVAILABLE_CHINESE_FONT, 10))
-        
-        # 主记录表格样式
-        style.configure("MainRecord.Treeview", rowheight=25)
-        style.configure("MainRecord.Treeview.Heading", 
-                       font=(AVAILABLE_CHINESE_FONT, 10, 'bold'),
-                       background="#f0f0f0")
-        
-        # 明细表格样式
-        style.configure("Detail.Treeview", rowheight=25)
-        style.configure("Detail.Treeview.Heading", 
-                       font=(AVAILABLE_CHINESE_FONT, 10, 'bold'),
-                       background="#f0f0f0")
-        
-        # 涨跌颜色标签
-        self.main_record_tree.tag_configure("up", foreground="red")
-        self.main_record_tree.tag_configure("down", foreground="green")
-        self.detail_tree.tag_configure("up", foreground="red")
-        self.detail_tree.tag_configure("down", foreground="green")
-        self.detail_tree.tag_configure("close", font=(AVAILABLE_CHINESE_FONT, 10, 'bold'))
+ 
     def setup_styles(self):
         """设置表格样式（使用全局字体大小）"""
         style = ttk.Style()
@@ -806,7 +787,8 @@ class FundHistoryViewer:
             end_date = self.end_date.strftime("%Y-%m-%d")
     
             # 使用单次 JOIN 查询获取主表 + 明细表的所有数据
-            with db_connection() as cursor:
+            with db_connection() as conn:
+                cursor = conn.cursor()
                 cursor.execute('''
                     SELECT 
                         m.trade_date,

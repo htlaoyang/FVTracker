@@ -1,4 +1,6 @@
 import sys
+import os
+import threading 
 import sqlite3
 import tkinter as tk
 from tkinter import messagebox
@@ -6,9 +8,104 @@ from packaging import version
 import traceback  # ✅ 必须导入
 import tkinter.font as tkfont  # 显式导入 font
 
+# ===== 托盘支持 =====
+try:
+    from pystray import Icon, Menu, MenuItem
+    from PIL import Image, ImageDraw
+    HAS_TRAY = True
+except ImportError:
+    HAS_TRAY = False
+
+
 from module.FVTracker import FVTracker
 from utils.db.db_upgrade_manager import DBUpgradeManager
 
+def get_resource_path(relative_path):
+    """获取 PyInstaller 打包后的资源路径"""
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+def load_tray_icon():
+    """尝试加载 FVTracker.ico，失败则返回 None"""
+    icon_path = get_resource_path("FVTracker.ico")  # 使用资源路径
+    if os.path.exists(icon_path):
+        try:
+            # .ico 文件可被 PIL 直接读取
+            return Image.open(icon_path)
+        except Exception as e:
+            print(f"⚠️ 无法加载图标 {icon_path}: {e}")
+    return None
+
+
+def create_default_icon():
+    """备用：生成简单图标"""
+    from PIL import Image, ImageDraw
+    width, height = 64, 64
+    image = Image.new('RGB', (width, height), (255, 255, 255))
+    dc = ImageDraw.Draw(image)
+    dc.ellipse((width // 4, height // 4, 3 * width // 4, 3 * height // 4), fill=(0, 100, 200))
+    return image
+
+
+class TrayManager:
+    def __init__(self, root):
+        self.root = root
+        self.icon = None
+        self.window_visible = True
+        if HAS_TRAY:
+            self._create_tray()
+
+    def _create_tray(self):
+        image = load_tray_icon() or create_default_icon()
+        self.icon = Icon("FVTracker", image, "FVTracker - 基金监控", menu=self._build_menu())
+        threading.Thread(target=self.icon.run, daemon=True).start()
+
+    def _build_menu(self):
+        if self.window_visible:
+            toggle = MenuItem('隐藏主窗口', self.hide_window, default=True)
+        else:
+            toggle = MenuItem('显示主窗口', self.show_window, default=True)
+        return Menu(toggle, Menu.SEPARATOR, MenuItem('退出', self.quit_app))
+
+    def show_window(self, icon=None, item=None):
+        self.root.after(0, self._do_show)
+
+    def _do_show(self):
+        self.root.deiconify()
+        self.root.lift()
+        self.root.attributes('-topmost', True)
+        self.root.after_idle(self.root.attributes, '-topmost', False)
+        self.window_visible = True
+        if self.icon:
+            self.icon.menu = self._build_menu()
+
+    def hide_window(self, icon=None, item=None):
+        self.root.after(0, self._do_hide)
+
+    def _do_hide(self):
+        self.root.withdraw()
+        self.window_visible = False
+        if self.icon:
+            self.icon.menu = self._build_menu()
+
+    def quit_app(self, icon=None, item=None):
+        self.root.after(0, self._do_quit)
+
+    def _do_quit(self):
+        if self.icon:
+            self.icon.stop()
+        self.root.quit()
+        self.root.destroy()
+
+    def on_closing(self):
+        if HAS_TRAY and self.icon:
+            self.hide_window()
+        else:
+            self.root.quit()
+            self.root.destroy()
 
 if __name__ == "__main__":
     try:
@@ -47,7 +144,16 @@ if __name__ == "__main__":
 
         # ======== 初始化主应用 ========
         app = FVTracker(root)
-        root.protocol("WM_DELETE_WINDOW", app.on_closing)
+        # ===== 注入托盘管理器 =====
+        tray_mgr = TrayManager(root)
+        root.protocol("WM_DELETE_WINDOW", tray_mgr.on_closing)
+
+        # 处理最小化事件（Windows/Linux）
+        def on_minimize(event):
+            if str(event.type) == 'Iconify' and event.widget is root:
+                tray_mgr.hide_window()
+        root.bind("<Unmap>", on_minimize)
+		
 
         # ======== SQLite 版本信息输出（可选） ========
         sqlite_engine_version = sqlite3.sqlite_version

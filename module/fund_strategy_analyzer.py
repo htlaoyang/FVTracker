@@ -1,13 +1,18 @@
 import os
 import tkinter as tk
-from tkinter import ttk, messagebox
+import requests
+import time
 import matplotlib.pyplot as plt
+import numpy as np
+
+from tkinter import ttk, messagebox
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.dates import DateFormatter, DayLocator
 
-import numpy as np
+
 from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 
 # 导入自定义工具
 from utils.sys_chinese_font import get_best_chinese_font
@@ -37,9 +42,9 @@ class FundStrategyAnalyzer:
         self.root.title(f"基金策略分析 - {fund_name}({fund_code})")
         self.root.geometry("1200x800")
 
-        # 设置默认日期范围（结束日期为今天，开始日期为一个月前）
+        # 设置默认日期范围：结束日期为今天，开始日期为5年前
         self.end_date = datetime.today()
-        self.start_date = self.end_date - timedelta(days=30)
+        self.start_date = self.end_date - relativedelta(years=5)
 		
         # 1. 预设子窗口尺寸（可根据需求调整）
         window_width  = 1600
@@ -198,90 +203,7 @@ class FundStrategyAnalyzer:
         self.canvas.draw()
     
         return self.fig, self.ax
-    def create_widgets12(self):
-        """创建主界面控件（优化布局：基金信息居中，结果与图表各占一行）"""
-        # 主框架
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-        
 
-    
-        # === 控制区域：使用 grid 实现比例布局 ===
-        control_frame = ttk.Frame(main_frame)
-        control_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
-        control_frame.columnconfigure(0, weight=4)  # 日期区域 占 40%
-        control_frame.columnconfigure(1, weight=6)  # 操作区域 占 60%
-    
-        # --- 日期选择区域 ---
-        date_frame = ttk.LabelFrame(control_frame, text="查询日期范围", padding="10")
-        date_frame.grid(row=0, column=0, sticky="ew", padx=(0, 5))
-        date_frame.columnconfigure(1, weight=1)
-        date_frame.columnconfigure(3, weight=1)
-    
-        ttk.Label(date_frame, text="开始日期:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
-        self.start_date_var = tk.StringVar(value=self.start_date.strftime("%Y-%m-%d"))
-        self.start_date_entry = ttk.Entry(date_frame, textvariable=self.start_date_var, width=12)
-        self.start_date_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
-    
-        ttk.Label(date_frame, text="结束日期:").grid(row=0, column=2, padx=5, pady=5, sticky=tk.W)
-        self.end_date_var = tk.StringVar(value=self.end_date.strftime("%Y-%m-%d"))
-        self.end_date_entry = ttk.Entry(date_frame, textvariable=self.end_date_var, width=12)
-        self.end_date_entry.grid(row=0, column=3, padx=5, pady=5, sticky="ew")
-    
-        # 操作按钮区域
-        action_frame = ttk.LabelFrame(control_frame, text="操作", padding="10")
-        action_frame.grid(row=0, column=1, sticky="ew")
-    
-        # 在 action_frame 内使用 grid 布局按钮（横向排列）
-        action_frame.columnconfigure(0, weight=1)
-        action_frame.columnconfigure(1, weight=1)
-        action_frame.columnconfigure(2, weight=1)
-
-        ttk.Button(action_frame, text="分析加仓策略", command=self.analyze_dca_strategy).grid(row=0, column=0, padx=5, pady=5, sticky="ew")
-        ttk.Button(action_frame, text="趋势检测", command=self.analyze_daily_channel_strategy).grid(row=0, column=1, padx=5, pady=5, sticky="ew")
-
-        # === 基金信息显示：居中一行 ===
-        info_frame = ttk.Frame(main_frame)
-        info_frame.grid(row=1, column=0, sticky="ew", pady=(0, 10))
-        info_frame.columnconfigure(0, weight=1)  # 让内部内容居中
-    
-        info_label = ttk.Label(
-            info_frame, 
-            text=f"基金代码: {self.fund_code} | 基金名称: {self.fund_name}",
-            font=("Arial", 14, "bold"),
-            anchor="center"
-        )
-        info_label.grid(row=0, column=0, sticky="ew")
-    
-    
-        # === 结果显示区域：占据一整行 ===
-        result_frame = ttk.LabelFrame(main_frame, text="分析结果", padding="10")
-        result_frame.grid(row=2, column=0, sticky="nsew", pady=(0, 10))
-        result_frame.columnconfigure(0, weight=1)
-        result_frame.rowconfigure(0, weight=1)  # 让文本框可伸展
-    
-        # 文本结果显示区
-        #self.result_text = tk.Text(result_frame, wrap=tk.WORD, font=("Consolas", 12))
-        #self.result_text.grid(row=0, column=0, sticky="nsew")
-        # 文本结果显示区
-        self.result_text = tk.Text(result_frame, wrap=tk.WORD, height=12, font=("Consolas", 12))
-        self.result_text.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-    
-        # === 图表显示区域：占据另一整行 ===
-        chart_frame = ttk.LabelFrame(main_frame, text="图表显示", padding="10")
-        chart_frame.grid(row=3, column=0, sticky="nsew", pady=(0, 0))
-        chart_frame.columnconfigure(0, weight=1)
-        chart_frame.rowconfigure(0, weight=1)
-    
-        # 创建图表
-        self.fig = Figure(figsize=(10, 6), dpi=100)
-        self.ax = self.fig.add_subplot(111)
-        self.canvas = FigureCanvasTkAgg(self.fig, chart_frame)
-        self.canvas_widget = self.canvas.get_tk_widget()
-        self.canvas_widget.grid(row=0, column=0, sticky="nsew")
-    
-        # 初始隐藏图表（如果需要）
-        self.canvas_widget.grid_remove()
     def analyze_dca_strategy(self):
         """分析分批加仓策略：基于历史最低估值设定基点，按百分比下跌生成加仓档位"""
         try:

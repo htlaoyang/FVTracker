@@ -180,7 +180,7 @@ class MessageNotifier:
             pass
 
 
-# ✅ 全局通知函数（供导入）
+# 全局通知函数（供导入）
 def notify(title="消息", message="", duration=3000, icon=None, level="info"):
     """
     快捷通知函数

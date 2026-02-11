@@ -23,8 +23,7 @@ from matplotlib.font_manager import FontProperties
 import sqlite3
 from packaging import version
 from utils.notif_send import NotificationSender
-
-
+from utils.news_fetcher import get_news_list, play_audio_from_url
 
 # GUI 相关
 import tkinter as tk
@@ -50,8 +49,12 @@ plt.rcParams["axes.unicode_minus"] = False
 class FVTracker:
     def __init__(self, root):
         # 软件版本配置
-        self.software_version = "V1.2.0   by htlaoyang"
+        self.software_version = "V1.2.1   by htlaoyang"
         self.version_update_log = """
+V1.2.1 更新内容：
+  1. 增加托盘功能
+  2. 增加钛媒体新闻快讯获取及自动播报功能
+  3. 基金历史估值查询默认为5年内的数据
 V1.2.0 更新内容：
   1. 增加计算工具
   2. 增加涨跌浮邮件提醒功能
@@ -93,6 +96,17 @@ V1.1.1 更新内容：
         self.default_headers = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"
         self._now_func = None
         self.summary_item_id = "TOTAL_SUMMARY_ROW" 
+        
+        # === 快讯系统）===
+        self.news_display_queue = []      # 待显示/播报的快讯列表 [item1, item2, ...]
+
+        self.current_display_index = 0    # 当前显示的索引（用于轮播）
+        self.news_paused = False          # 鼠标悬停暂停
+        self.news_cycle_job = None        # 轮播定时器
+        self.news_fetch_job = None        # 拉取定时器
+        
+        self.last_end_ts = int(time.time()) - 300  # 首次拉取：5分钟前
+        
 		
         # 常用指数列表
         self.indices = [
@@ -160,7 +174,8 @@ V1.1.1 更新内容：
         self.root.after(100, self.start_core_threads_async)
         self.root.after(200, lambda: self.center_window(1200, 800))
         #self.root.after(300, self.force_center_window)
-
+        # 启动服务
+        self._start_auto_fetch()           # 启动自动拉取
     def get_now(self) -> datetime.datetime:
         """获取当前时间，支持测试时 mock"""
         return self._now_func() if self._now_func else datetime.datetime.now()
@@ -706,6 +721,76 @@ V1.1.1 更新内容：
                 ]
             })
         ])
+		
+    def _start_auto_fetch(self):
+        """启动自动拉取，但不自动轮播；由播放引擎驱动显示"""
+        def fetch_and_enqueue():
+            try:
+                current_ts = int(time.time())
+                start_ts = self.last_end_ts
+                end_ts = current_ts
+    
+                if start_ts >= end_ts:
+                    start_ts = end_ts - 300
+    
+                news_items = get_news_list(start_ts, end_ts)
+                if news_items:
+                    self._write_log(f"拉取到 {len(news_items)} 条新快讯", 'info')
+                    for item in news_items:
+                        # 日志：记录加入队列的每条消息
+                        self._write_log(f"入队快讯: [{item['time_str']}] {item['title']}", 'debug')
+                        self.news_display_queue.append(item)
+                    if len(self.news_display_queue) > 10:
+                        self.news_display_queue = self.news_display_queue[-10:]
+                    # 启动播报（如果尚未运行）
+                    if not self.is_playing:
+                        self._play_next_in_queue()
+                self.last_end_ts = end_ts
+            except Exception as e:
+                self._write_log(f"拉取快讯失败: {e}", 'error')
+            self.news_fetch_job = self.root.after(30000, fetch_and_enqueue)
+    
+        self.is_playing = False  # 新增标志位
+        self.news_fetch_job = self.root.after(1000, fetch_and_enqueue)
+    
+    
+    def _play_next_in_queue(self):
+        """顺序播放：播一条 → 显示它 → 等播完 → 播下一条"""
+        if not self.news_display_queue or self.is_playing:
+            return
+    
+        self.is_playing = True
+        item = self.news_display_queue.pop(0)  # 立即取出
+    
+        # 立即更新状态栏为当前播放的这条
+        display_text = f"【快讯】{item['time_str']} {item['title']}"
+        self.status_var.set(display_text)
+        
+        # 日志：明确记录“正在播放”
+        self._write_log(f"▶ 正在播放: [{item['time_str']}] {item['title']}", 'info')
+    
+        def play_audio():
+            try:
+                play_audio_from_url(item["audio_url"])
+                self._write_log(f"✅ 播放完成: [{item['time_str']}] {item['title']}", 'info')
+            except Exception as e:
+                self._write_log(f"❌ 播放失败: {e}", 'error')
+            finally:
+                # 播放结束后，继续下一条
+                self.root.after(500, self._finish_play_and_continue)
+    
+        threading.Thread(target=play_audio, daemon=True).start()
+    
+    
+    def _finish_play_and_continue(self):
+        """播放完成后的清理和继续"""
+        self.is_playing = False
+        # 如果还有消息，继续播放
+        if self.news_display_queue:
+            self.root.after(1000, self._play_next_in_queue)
+        else:
+            # 队列空了，清空状态栏或显示提示
+            self.status_var.set("暂无快讯")
     def open_history_viewer(self):
         """打开基金历史记录查看器（传递主窗口实例，用于居中定位）"""
         selected_items = self.fund_tree.selection()
