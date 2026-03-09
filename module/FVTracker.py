@@ -49,8 +49,12 @@ plt.rcParams["axes.unicode_minus"] = False
 class FVTracker:
     def __init__(self, root):
         # 软件版本配置
-        self.software_version = "V1.2.1   by htlaoyang"
+        self.software_version = "V1.2.2   by htlaoyang"
         self.version_update_log = """
+V1.2.2 更新内容：
+1. 增加基金历史估值下载更新，只有每天的估值，无每天详细估值;【增加功能】
+2. 优化加仓策略分析;【优化功能】
+3. 增加月季度分析;
 V1.2.1 更新内容：
   1. 增加托盘功能
   2. 增加钛媒体新闻快讯获取及自动播报功能

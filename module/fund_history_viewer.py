@@ -14,6 +14,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from datetime import datetime, timedelta
 from tkinter.filedialog import asksaveasfilename
 from utils.logger import write_log
+from tqdm import tqdm
 
 # 导入中文字体设置
 from utils.sys_chinese_font import get_best_chinese_font
@@ -58,6 +59,20 @@ class FundHistoryViewer:
 
     def create_widgets(self):
         """创建主界面控件，统一使用 grid 布局"""
+		
+        self.status_var = tk.StringVar(value="就绪")
+        self.status_bar = tk.Label(
+            self.root,  # ← 父容器是 root，不是 main_frame！
+            textvariable=self.status_var,
+            relief=tk.SUNKEN,
+            anchor=tk.W,
+            bg="lightgray",
+            fg="black",
+            padx=5,
+            pady=2
+        )
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+		
         # 主框架
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
@@ -99,7 +114,7 @@ class FundHistoryViewer:
         export_frame.columnconfigure(2, weight=1)
     
         ttk.Button(export_frame, text="导出数据", command=self.export_data).grid(row=0, column=0, padx=5, pady=5, sticky="ew")
-        ttk.Button(export_frame, text="分析加仓策略", command=self.analyze_dca_strategy).grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        ttk.Button(export_frame, text="历史数据下载", command=self.download_historical_estimates).grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 		
         # 2. 历史主记录表格
         main_record_frame = ttk.LabelFrame(main_frame, text="历史估值主记录", padding="10")
@@ -468,284 +483,248 @@ class FundHistoryViewer:
         # 设置子窗口为模态
         self.root.transient(self.parent)
         self.root.grab_set()
-    def analyze_dca_strategy(self):
-        """分析分批加仓策略：基于历史最低估值设定基点，按百分比下跌生成加仓档位"""
+
+    def _fetch_lsjz_from_api(self, start_date: str, end_date: str, progress_callback=None):
+        """
+        API 获取历史净值列表（LSJZ），支持动态分页。
+        :param start_date: 起始日期，格式 'YYYY-MM-DD'
+        :param end_date: 结束日期，格式 'YYYY-MM-DD'
+        :param progress_callback: 可选回调函数，用于更新 GUI 状态，如 lambda msg: ...
+        :return: list[dict] 原始数据列表
+        """
+        all_data = []
+        page_size = 20
+        max_retries = 3
+        retry_delay = 1
+    
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+            "Referer": f"http://fundf10.eastmoney.com/jjjz_{self.fund_code}.html",
+            "Accept": "application/json, text/plain, */*",
+            "Host": "api.fund.eastmoney.com",
+            "Connection": "keep-alive"
+        }
+    
+        url = "http://api.fund.eastmoney.com/f10/lsjz"
+        params = {
+            "fundCode": self.fund_code,
+            "pageIndex": 1,
+            "pageSize": page_size,
+            "startDate": start_date,
+            "endDate": end_date,
+            "callback": ""
+        }
+    
+        # === 第一页请求 ===
         try:
-            start_date = self.start_date.strftime("%Y-%m-%d")
-            end_date = self.end_date.strftime("%Y-%m-%d")
+            resp = requests.get(url, headers=headers, params=params, timeout=10)
+            resp.encoding = "utf-8"
     
-            # 获取历史估值数据（用于计算历史最低）
-            with db_connection() as conn:
-                result  = conn.execute('''
-                    SELECT realtime_estimate 
-                    FROM fund_estimate_details 
-                    WHERE fund_code = ? AND trade_date BETWEEN ? AND ?
-                ''', (self.fund_code, start_date, end_date))
-                values = [row[0] for row in result.fetchall() if row[0] is not None]
+            if '"ErrCode":-999' in resp.text:
+                msg = f"[{self.fund_code}] 被反爬（ErrCode: -999），停止抓取"
+                write_log(msg)
+                if progress_callback:
+                    progress_callback(f"❌ {msg}")
+                return all_data
     
-            if not values:
-                messagebox.showinfo("分析结果", "当前查询范围内无估值数据，无法分析。")
+            data = resp.json()
+            err_code = data.get("ErrCode", 0)
+            if err_code != 0:
+                errmsg = data.get("ErrMsg", "未知错误")
+                msg = f"[{self.fund_code}] API 返回错误：ErrCode={err_code}, ErrMsg={errmsg}"
+                write_log(msg)
+                if progress_callback:
+                    progress_callback(f"❌ {msg}")
+                return all_data
+    
+            total_count = data.get("TotalCount", 0)
+            first_page_data = data.get("Data", {}).get("LSJZList", [])
+            all_data.extend(first_page_data)
+    
+            if total_count == 0:
+                if progress_callback:
+                    progress_callback("⚠️ 无历史净值数据")
+                write_log(f"[{self.fund_code}] 无历史净值数据")
+                return all_data
+    
+            expected_pages = (total_count + page_size - 1) // page_size
+            if progress_callback:
+                progress_callback(f"共 {expected_pages} 页，正在下载第 1 页（{int(1/expected_pages*100)}%）")
+    
+            write_log(f"[{self.fund_code}] 总记录数: {total_count}，预计需请求 {expected_pages} 页")
+    
+        except Exception as e:
+            msg = f"[{self.fund_code}] 获取第一页失败: {e}"
+            write_log(msg)
+            if progress_callback:
+                progress_callback(f"❌ {msg}")
+            return all_data
+    
+        # === 后续页请求 ===
+        for page in range(2, expected_pages + 1):
+            params["pageIndex"] = page
+            retries = 0
+            success = False
+    
+            while retries < max_retries and not success:
+                try:
+                    resp = requests.get(url, headers=headers, params=params, timeout=10)
+                    resp.encoding = "utf-8"
+    
+                    if '"ErrCode":-999' in resp.text:
+                        msg = f"[{self.fund_code}] 第 {page} 页被反爬（ErrCode: -999），停止抓取"
+                        write_log(msg)
+                        if progress_callback:
+                            progress_callback(f"❌ {msg}")
+                        return all_data
+    
+                    data = resp.json()
+                    err_code = data.get("ErrCode", 0)
+                    if err_code != 0:
+                        raise Exception(data.get("ErrMsg", "API 错误"))
+    
+                    page_data = data.get("Data", {}).get("LSJZList", [])
+                    if not page_data:
+                        write_log(f"[{self.fund_code}] 第 {page} 页无数据，提前结束")
+                        break
+    
+                    all_data.extend(page_data)
+                    success = True
+    
+                    # 实时更新进度
+                    percent = int(page / expected_pages * 100)
+                    if progress_callback:
+                        progress_callback(f"共 {expected_pages} 页，正在下载第 {page} 页（{percent}%）")
+    
+                    time.sleep(0.3)  # 避免触发限流
+    
+                except Exception as e:
+                    retries += 1
+                    if retries > max_retries:
+                        msg = f"[{self.fund_code}] 第 {page} 页达到最大重试次数，跳过"
+                        write_log(msg)
+                        if progress_callback:
+                            progress_callback(f"⚠️ {msg}")
+                        break
+                    time.sleep(retry_delay)
+    
+        if progress_callback:
+            progress_callback(f" 下载完成！共获取 {len(all_data)} 条原始记录")
+        write_log(f"[{self.fund_code}] 历史净值数据拉取完成，共获取 {len(all_data)} 条原始记录")
+        return all_data
+    
+    
+    def download_historical_estimates(self):
+        """
+        下载历史净值数据并保存到数据库，支持实时进度反馈。
+        """
+        fund_id = f"{self.fund_code} - {self.fund_name}"
+        write_log(f"[{fund_id}] 开始下载历史净值数据，日期范围：{self.start_date} 至 {self.end_date}")
+    
+        # 状态栏更新辅助函数（强制刷新 UI）
+        def update_status(message):
+            self.status_var.set(message)
+            self.root.update_idletasks()
+    
+        try:
+            start_str = self.start_date.strftime("%Y-%m-%d")
+            end_str = self.end_date.strftime("%Y-%m-%d")
+    
+            # 从 API 下载原始数据（带进度回调）
+            all_data = self._fetch_lsjz_from_api(start_str, end_str, progress_callback=update_status)
+    
+            if not all_data:
+                update_status("⚠️ 未获取到任何原始数据")
+                messagebox.showwarning("警告", "API 返回空数据，请检查基金代码或日期范围。")
                 return
     
-            min_val = min(values)
-            max_val = max(values)
-            avg_val = sum(values) / len(values)
+            # 过滤有效记录 —— 关键修改：trade_date 存为字符串！
+            valid_records = []
+            for item in all_data:
+                fsrq = item.get("FSRQ")
+                dwjz = item.get("DWJZ")
+                jzzzl = item.get("JZZZL")
+                if not fsrq or dwjz == "" or jzzzl == "":
+                    continue
+                try:
+                    # 验证日期格式，但最终存储为字符串 "YYYY-MM-DD"
+                    datetime.strptime(fsrq, "%Y-%m-%d")  # 仅用于验证
+                    unit_net_value = float(dwjz)
+                    change_rate = float(jzzzl)
+                    valid_records.append({
+                        "trade_date": fsrq,  # 直接使用原始字符串，确保格式一致
+                        "unit_net_value": unit_net_value,
+                        "change_rate": change_rate
+                    })
+                except (ValueError, TypeError):
+                    continue  # 跳过格式错误的记录
     
-            # 加仓策略配置：回撤比例与资金分配
-            DCA_CONFIG = [
-                {"label": "首次建仓", "desc": "0.00%", "drop": 0.00, "funds_ratio": 0.10, "color": ""},
-                {"label": "第一次加仓", "desc": "跌≥5%", "drop": 0.05, "funds_ratio": 0.20, "color": ""},
-                {"label": "第二次加仓", "desc": "跌≥10%", "drop": 0.10, "funds_ratio": 0.30, "color": ""},
-                {"label": "第三次加仓", "desc": "跌≥15%", "drop": 0.15, "funds_ratio": 0.40, "color": ""},
-            ]
+            if not valid_records:
+                update_status("⚠️ 没有有效净值数据可保存")
+                messagebox.showwarning("警告", "所有返回数据格式无效，无法入库。")
+                return
     
-            TOTAL_CAPITAL = 20000  # 总资金（可配置）
+            total_valid = len(valid_records)
     
-            # 生成加仓档位
-            levels = []
-            for config in DCA_CONFIG:
-                if config["drop"] == 0:
-                    lower_bound = min_val - 0.0050
-                    upper_bound = min_val + 0.0050
-                    threshold = lower_bound
-                    level_str = f"{lower_bound:.4f} ~ {upper_bound:.4f}"
-                else:
-                    threshold = min_val * (1 - config["drop"])
-                    level_str = f"≤ {threshold:.4f} ({config['desc']})"
-                levels.append({
-                    "label": config["label"],
-                    "desc": config["desc"],
-                    "threshold": threshold,
-                    "funds_ratio": config["funds_ratio"],
-                    "level_str": level_str,
-                    "color": config["color"]
-                })
-    
-            # ==================== 获取当日估值：最新 + 最低 ====================
-            latest_estimate = None
-            intraday_low = None
-    
-            # 从数据库获取当日所有估值
+            # 数据库操作（查询 + 插入）—— 现在都是字符串比较！
+            inserted_count = 0
             with db_connection() as conn:
-                result = conn.execute('''
-                    SELECT realtime_estimate 
-                    FROM fund_estimate_details 
-                    WHERE fund_code = ? AND DATE(trade_date) = DATE('now')
-                    ORDER BY estimate_time DESC
-                ''', (self.fund_code,))
-                today_values = [row[0] for row in result.fetchall() if row[0] is not None]
+                cursor = conn.cursor()
     
-                if today_values:
-                    latest_estimate = today_values[0]  # 最新一条
-                    intraday_low = min(today_values)
+                # 查询已存在的交易日期（返回的是字符串列表）
+                cursor.execute('''
+                    SELECT trade_date FROM fund_estimate_main 
+                    WHERE fund_code = ? AND trade_date BETWEEN ? AND ?
+                ''', (self.fund_code, start_str, end_str))
+                existing_dates = {row[0] for row in cursor.fetchall()}  # set of str
     
-            # 备用：从界面表格获取当日数据
-            if not today_values and self.main_record_tree.get_children():
-                values_from_ui = []
-                for item in self.main_record_tree.get_children():
-                    values = self.main_record_tree.item(item)["values"]
-                    if len(values) > 2:
-                        try:
-                            val = float(values[2])
-                            values_from_ui.append(val)
-                        except (ValueError, TypeError):
-                            continue
-                if values_from_ui:
-                    latest_estimate = values_from_ui[0]
-                    intraday_low = min(values_from_ui)
+                # 过滤出新记录：字符串 vs 字符串
+                new_records = [rec for rec in valid_records if rec["trade_date"] not in existing_dates]
+                inserted_count = len(new_records)
     
-            # ==================== 判断触发层级（使用当日最低估值） ====================
-            triggered_level = None
-            check_val = intraday_low if intraday_low is not None else latest_estimate
+                # 插入新记录
+                if new_records:
+                    cursor.executemany('''
+                        INSERT INTO fund_estimate_main (
+                            fund_code, trade_date, unit_net_value, 
+                            realtime_estimate, change_rate, realtime_profit
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                    ''', [
+                        (
+                            self.fund_code,
+                            rec["trade_date"],  # 已是 "YYYY-MM-DD" 字符串
+                            rec["unit_net_value"],
+                            rec["unit_net_value"],
+                            rec["change_rate"],
+                            0.0
+                        )
+                        for rec in new_records
+                    ])
+                    conn.commit()
     
-            if check_val is not None:
-                for level in reversed(levels):
-                    if level["desc"] == "0.00%":
-                        lower_bound = min_val - 0.0050
-                        upper_bound = min_val + 0.0050
-                        if lower_bound <= check_val <= upper_bound:
-                            triggered_level = level
-                            break
-                    else:
-                        if check_val <= level["threshold"]:
-                            triggered_level = level
-                            break
+            # 更新 UI 和日志
+            final_msg = f"✅ 成功新增 {inserted_count} 条记录（共 {total_valid} 条有效数据）"
+            self.status_var.set(final_msg)
+            write_log(f"[{fund_id}] {final_msg}")
     
-            # ==================== 构建分析文本 ====================
-            result_text = (
-                f"基金分批加仓策略分析\n"
-                f"────────────────────────────────\n"
-                f"基金代码：{self.fund_code}\n"
-                f"基金名称：{self.fund_name}\n"
-                f"查询区间：{start_date} 至 {end_date}\n"
-                f"数据量：{len(values):,} 个估值点\n"
-                f"统计：最低={min_val:.4f}，最高={max_val:.4f}，平均={avg_val:.4f}\n\n"
-    
-                f"基准设定\n"
-                f"历史最低估值：{min_val:.4f}\n"
-                f"首次建仓区间：{min_val - 0.0050:.4f} ~ {min_val + 0.0050:.4f}\n"
-                f"后续加仓：基于历史最低估值每下跌一定比例触发\n\n"
-    
-                f"分批加仓建议（越跌越买）：\n"
+            # 弹窗提示
+            messagebox.showinfo(
+                "下载完成",
+                f"历史净值数据处理完毕！\n"
+                f"• 原始数据：{len(all_data)} 条\n"
+                f"• 有效数据：{total_valid} 条\n"
+                f"• 新增入库：{inserted_count} 条"
             )
     
-            # 输出每一档
-            for level in levels:
-                mark = "✅" if (check_val and (
-                    (level["desc"] == "0.00%" and (min_val - 0.0050) <= check_val <= (min_val + 0.0050)) or
-                    (level["desc"] != "0.00%" and check_val <= level["threshold"])
-                )) else "○"
-                result_text += f"{mark} {level['color']} {level['label']}: {level['level_str']}\n"
-    
-            # 显示盘中估值
-            result_text += f"\n盘中估值监测：\n"
-            if latest_estimate is not None and intraday_low is not None:
-                result_text += f"  最新估值（Last）：{latest_estimate:.4f}\n"
-                result_text += f"  当日最低（Low）：{intraday_low:.4f}\n"
-                if triggered_level:
-                    result_text += f"\n强烈建议：盘中已触及【{triggered_level['label']}】区间！\n"
-                    result_text += f"   可考虑执行对应加仓操作。\n"
-                else:
-                    result_text += f"\n建议：尚未进入加仓区间，继续观望。\n"
-            elif latest_estimate is not None:
-                result_text += f"  当前估值：{latest_estimate:.4f}\n"
-                result_text += f"  提示：暂无完整盘中数据，建议参考实时行情。\n"
-            else:
-                result_text += f"  当前估值：获取失败\n"
-    
-            # 资金分配表示例（对齐优化版）
-            result_text += f"\n总资金分配示例（假设总资金为 {TOTAL_CAPITAL:,} 元）\n"
-            result_text += "─────────────────────────────────────────────────────\n"
-    
-            # 定义每列宽度（字符数）
-            COL_STAGE = 14      # 阶段
-            COL_CONDITION = 24  # 触发条件
-            COL_INVEST = 18     # 投入资金
-            COL_CUMULATIVE = 14 # 累计投入
-    
-            result_text += (
-                f"{'阶段':<{COL_STAGE}}"
-                f"{'触发条件（估值）':<{COL_CONDITION}}"
-                f"{'投入资金':<{COL_INVEST}}"
-                f"{'累计投入':<{COL_CUMULATIVE}}\n"
-            )
-            result_text += "─────────────────────────────────────────────────────\n"
-    
-            # 数据行
-            cumulative = 0
-            for level in levels:
-                invest = TOTAL_CAPITAL * level["funds_ratio"]
-                cumulative += invest
-                condition = level["level_str"]
-                amount_str = f"{int(invest):,}元 ({int(level['funds_ratio']*100)}%)"
-                cumul_str = f"{int(cumulative):,}元"
-    
-                result_text += (
-                    f"{level['label']:<{COL_STAGE}}"
-                    f"{condition:<{COL_CONDITION}}"
-                    f"{amount_str:<{COL_INVEST}}"
-                    f"{cumul_str:<{COL_CUMULATIVE}}\n"
-                )
-    
-            result_text += f"\n说明：以历史最低估值 {min_val:.4f} 为锚点，越跌越买，逐步重仓。\n"
-            result_text += "提示：本策略基于历史估值分析，仅供参考，投资需谨慎。"
-    
-            # 显示结果
-            self._show_analysis_result("加仓策略分析结果", result_text)
+            # 刷新表格显示
+            self.load_history_main_records()
     
         except Exception as e:
-            messagebox.showerror("分析失败", f"执行分析时发生错误：\n{str(e)}")
-
-    def _show_analysis_result(self, title, text):
-        """
-        显示可复制的分析结果弹窗
-        支持文本展示、滚动条、复制按钮和关闭功能
-        """
-        # 创建顶级弹窗
-        dialog = tk.Toplevel(self.root)
-        dialog.title(title)
-        dialog.geometry("700x550")  # 适配宽文本内容
-        dialog.configure(bg="#f0f0f0")
-        
-        # 设置为模态窗口（阻塞父窗口操作）
-        dialog.transient(self.root)
-        dialog.grab_set()  # 捕获输入焦点
-        self._center_window(dialog, 700, 550, parent=self.root)
-        dialog.focus_force()  # 强制焦点到当前窗口
-    
-        # 主内容框架（带内边距）
-        frame = ttk.Frame(dialog, padding="10")
-        frame.pack(fill=tk.BOTH, expand=True)
-    
-        # 文本框（支持换行、高亮、只读）
-        #text_widget = tk.Text(
-        #    frame,
-        #    wrap=tk.WORD,
-        #    font=("Consolas", 10),  # 等宽字体，适合数据对齐
-        #    bg="white",
-        #    fg="black",
-        #    relief="flat",
-        #    spacing1=6,   # 段前间距
-        #    spacing2=2,   # 行间距
-        #    spacing3=6    # 段后间距
-        #)
-        text_widget = tk.Text(
-            frame,
-            wrap=tk.WORD,
-            font=("Consolas", 10),  # 必须使用等宽字体
-            bg="white",
-            fg="black",
-            relief="flat"
-        )
-		
-        # 滚动条
-        scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=text_widget.yview)
-        text_widget.configure(yscrollcommand=scrollbar.set)
-    
-        # 布局文本框和滚动条
-        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-    
-        # 插入分析结果文本
-        text_widget.insert(tk.END, text)
-        text_widget.config(state=tk.DISABLED)  # 设置为只读
-    
-        # 按钮框架（避免拥挤）
-        button_frame = ttk.Frame(frame)
-        button_frame.pack(fill=tk.X, pady=5)
-    
-        # 复制按钮
-        ttk.Button(
-            button_frame,
-            text="复制全部",
-            command=lambda: self._copy_to_clipboard(text)
-        ).pack(side=tk.LEFT, padx=5)
-    
-        # 关闭按钮
-        ttk.Button(
-            button_frame,
-            text=" 关闭",
-            command=dialog.destroy
-        ).pack(side=tk.RIGHT, padx=5)
-    
-        # 可选：按 Esc 键关闭
-        dialog.bind("<Escape>", lambda e: dialog.destroy())
-    
-        # 可选：支持 Ctrl+C 复制（虽然只读，但默认仍可选中复制）
-        # 如果需要强制支持复制快捷键，可添加：
-        dialog.bind("<Control-c>", lambda e: self._copy_to_clipboard(text_widget.get("1.0", tk.END)))
-    
-    
-    def _copy_to_clipboard(self, text):
-        """将指定文本复制到系统剪贴板"""
-        try:
-            self.root.clipboard_clear()  # 清空剪贴板
-            self.root.clipboard_append(text)
-            self.root.update()  # 保持剪贴板内容
-            messagebox.showinfo("复制成功", "分析结果已复制到剪贴板。")
-        except Exception as e:
-            messagebox.showerror("复制失败", f"无法复制到剪贴板：\n{str(e)}")
-    
+            error_msg = f"❌ 下载异常: {str(e)}"
+            self.status_var.set(error_msg)
+            write_log(f"[{fund_id}] {error_msg}")
+            messagebox.showerror("错误", f"下载过程中发生异常：\n{str(e)}")
+    		
     def _center_window(self, window, width, height, parent=None):
         """
         将窗口居中显示

@@ -109,22 +109,7 @@ class TrayManager:
 
 if __name__ == "__main__":
     try:
-        # ======== 在这里设置 DPI 感知（创建 Tk() 之前！）========
-        #import ctypes
-        #try:
-        #    # 2: PROCESS_PER_MONITOR_DPI_AWARE_V2 (最佳支持高分屏)
-        #    ctypes.windll.shcore.SetProcessDpiAwareness(2)
-        #    print("已启用高 DPI 支持 (Per-Monitor DPI Aware V2)")
-        #except Exception as e:
-        #    print(f"SetProcessDpiAwareness(2) 失败，尝试级别 1: {e}")
-        #    try:
-        #        # 1: PROCESS_PER_MONITOR_DPI_AWARE
-        #        ctypes.windll.shcore.SetProcessDpiAwareness(1)
-        #        print("已启用中等 DPI 支持 (Per-Monitor DPI Aware)")
-        #    except Exception as e:
-        #        print(f"无法设置 DPI 感知: {e}")
-        ##  ======== DPI 设置结束 ========
-        ## 创建 Tk 实例
+        # 创建 Tk 实例
         root = tk.Tk()
         root.withdraw()  # 先隐藏主窗口
         root.update_idletasks()
