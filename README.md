@@ -67,7 +67,7 @@ root
 
 1. 克隆仓库
 ```bash
-git clone git clone https://github.com/htlaoyang/FVTracker.git
+git clone https://github.com/htlaoyang/FVTracker.git
 cd FVTracker
 ```
 

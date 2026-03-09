@@ -5,7 +5,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('fund_data.db', '.')],
+    datas=[('FVTracker.ico', '.'), ('fund_data.db', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

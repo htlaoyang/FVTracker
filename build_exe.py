@@ -19,6 +19,7 @@ def build_exe():
         "--onefile",  # 生成单个EXE文件
         "--windowed",  # 不显示控制台窗口
         "--icon=FVTracker.ico",  # 可选：指定图标文件
+		"--add-data=FVTracker.ico;.", 
         "--add-data=fund_data.db;.",  # 包含数据库文件
         "main.py"  # 你的主程序文件名
     ]

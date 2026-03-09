@@ -50,14 +50,17 @@ class FundManager:
         self.add_rise_alert_entry = None
         self.add_fall_alert_entry = None
 
+
     def load_funds_data(self):
         """从数据库加载基金数据，返回基金列表（供主程序使用）"""
         funds = []
         try:
-            with db_connection() as cursor:
-                # 假设数据库表 funds 已更新，包含 rise_alert 和 fall_alert 字段
-                cursor.execute("SELECT code, name, latest_net_value, is_hold, cost, shares, rise_alert, fall_alert FROM funds")
-                for record in cursor.fetchall():
+            with db_connection() as conn:
+                # 执行查询
+                result = conn.execute(
+                    "SELECT code, name, latest_net_value, is_hold, cost, shares, rise_alert, fall_alert FROM funds"
+                )
+                for record in result.fetchall():
                     funds.append({
                         "code": record[0],
                         "name": record[1],
@@ -65,7 +68,6 @@ class FundManager:
                         "is_hold": bool(record[3]),
                         "cost": record[4],
                         "shares": record[5],
-                        # 新增字段
                         "rise_alert": record[6],
                         "fall_alert": record[7],
                         "current_value": None,
@@ -347,9 +349,9 @@ class FundManager:
     
         # 数据库操作：新增或更新
         try:
-            with db_connection() as cursor:
-                cursor.execute("SELECT code FROM funds WHERE code = ?", (fund_code,))
-                exists = cursor.fetchone()
+            with db_connection() as conn:
+                result = conn.execute("SELECT code FROM funds WHERE code = ?", (fund_code,))
+                exists = result.fetchone()
         
                 # 所有字段（包含提醒阈值）
                 base_fields = (
@@ -363,7 +365,7 @@ class FundManager:
                 )
         
                 if exists:
-                    cursor.execute('''
+                    conn.execute('''
                         UPDATE funds 
                         SET name = ?, 
                             latest_net_value = ?, 
@@ -376,7 +378,7 @@ class FundManager:
                     ''', base_fields + (fund_code,))
                     msg = f"已更新基金: {fund_name}({fund_code})"
                 else:
-                    cursor.execute('''
+                    conn.execute('''
                         INSERT INTO funds (
                             code, name, latest_net_value, is_hold, 
                             cost, shares, rise_alert, fall_alert
@@ -462,12 +464,12 @@ class FundManager:
 
         # 数据库操作（删除基金+关联估值数据）
         try:
-            with db_connection() as cursor:
+            with db_connection() as conn:
                 # 删除关联估值数据
-                cursor.execute("DELETE FROM fund_estimate_main WHERE fund_code = ?", (fund_code,))
-                cursor.execute("DELETE FROM fund_estimate_details WHERE fund_code = ?", (fund_code,))
+                conn.execute("DELETE FROM fund_estimate_main WHERE fund_code = ?", (fund_code,))
+                conn.execute("DELETE FROM fund_estimate_details WHERE fund_code = ?", (fund_code,))
                 # 删除基金本身
-                cursor.execute("DELETE FROM funds WHERE code = ?", (fund_code,))
+                conn.execute("DELETE FROM funds WHERE code = ?", (fund_code,))
 
             # 同步更新界面
             self.refresh_funds_cb()
@@ -535,18 +537,33 @@ class FundManager:
 
             imported = 0
             updated = 0
-            with db_connection() as cursor:
+            with db_connection() as conn:
                 for fund in import_data:
                     # 校验必要字段
                     if not all(k in fund for k in ["code", "name"]):
                         continue
 
                     fund_code = fund["code"]
+                    # --- 关键修改：处理 latest_net_value ---
+                    raw_nv = fund.get("latest_net_value")
+                    # 如果是 0.0 或 null，统一设为 None（即数据库 NULL）
+                    if raw_nv is None or (isinstance(raw_nv, (int, float)) and abs(raw_nv) < 1e-6):
+                        latest_net_value = None
+                    else:
+                        latest_net_value = float(raw_nv) if isinstance(raw_nv, (int, float)) else None
+    
+                    # --- 其他字段 ---
+                    is_hold = bool(fund.get("is_hold", False))
+                    cost = float(fund["cost"]) if fund.get("cost") not in (None, "") else None
+                    shares = float(fund["shares"]) if fund.get("shares") not in (None, "") else None
+                    rise_alert = float(fund["rise_alert"]) if fund.get("rise_alert") not in (None, "") else None
+                    fall_alert = float(fund["fall_alert"]) if fund.get("fall_alert") not in (None, "") else None
+    
                     # 检查基金是否已存在
-                    cursor.execute("SELECT code FROM funds WHERE code = ?", (fund_code,))
-                    if cursor.fetchone():
+                    result = conn.execute("SELECT code FROM funds WHERE code = ?", (fund_code,))
+                    if result.fetchone():
                         # 更新现有基金
-                        cursor.execute('''
+                        conn.execute('''
                             UPDATE funds 
                             SET name = ?, latest_net_value = ?, is_hold = ?, cost = ?, shares = ?, rise_alert = ?, fall_alert = ?
                             WHERE code = ?
@@ -558,10 +575,10 @@ class FundManager:
                         updated += 1
                     else:
                         # 新增基金
-                        cursor.execute('''
+                        conn.execute('''
                             INSERT INTO funds 
-                            (code, name, latest_net_value, is_hold, cost, shares, rise_alert, fall_alert) # 新增：字段
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?) # 新增：占位符
+                            (code, name, latest_net_value, is_hold, cost, shares, rise_alert, fall_alert)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (fund_code, fund["name"], fund.get("latest_net_value"),
                               1 if fund.get("is_hold", False) else 0,
                               fund.get("cost"), fund.get("shares"),

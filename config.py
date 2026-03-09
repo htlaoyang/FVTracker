@@ -1,11 +1,22 @@
 """
 项目常量配置
 """
-
+import sys
 from pathlib import Path
 
-# 使用 Path 获取项目根目录（__file__ 是当前 config.py 的路径）
-PROJECT_DIR = Path(__file__).parent.absolute()
+def get_project_dir():
+    """获取程序运行的根目录（支持 PyInstaller 打包）"""
+    if getattr(sys, 'frozen', False):
+        # 程序是打包运行的（PyInstaller）
+        # sys.executable 是 .exe 文件的路径
+        return Path(sys.executable).parent
+    else:
+        # 正常 Python 解释器运行
+        return Path(__file__).parent.absolute()
+
+# 获取正确的项目根目录
+PROJECT_DIR = get_project_dir()
+
 
 # 配置文件路径
 CONFIG_FILE = PROJECT_DIR / "config.ini"

@@ -1,0 +1,9 @@
+{
+  "ui": {
+    "font_size": 14
+  },
+  "notification": {
+    "enabled": false,
+    "email": "123@qq.com"
+  }
+}
