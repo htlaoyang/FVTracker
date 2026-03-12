@@ -108,7 +108,11 @@ python build_exe.py
 ![fund4.png](resources/function/fund4.png)
 ### 基金左侧加仓策略分析
 ![fund5.png](resources/function/fund5.png)
-
+### 涨跌浮发送提醒邮件功能设置
+设置基金的成本及涨跌浮数值。config.json中设置接收邮箱，并启用邮件发送提醒。      
+注："enabled": true   是启用
+![fund5.png](resources/function/fund16.png)
+![fund5.png](resources/function/fund17.png)
 
 ## 📄 许可证
 
@@ -132,8 +136,13 @@ python build_exe.py
   <tr>
     <td ><img src="./resources/screenshotwechat.png"/></td>  
   </tr>
+  <tr>
+    <td align="center">QQ群</td>
+  </tr>
+  <tr>
+    <td ><img src="./resources/qqjlq.jpg"/></td>  
+  </tr>
 </table>
-![screenshotwechat.png](resources/screenshotwechat.png) 
 
 ## 🧧 捐献作者
 ### 都划到这了，如果我的项目对您有帮助，请赞助我吧！😊😊😊
