@@ -123,7 +123,7 @@ python build_exe.py
 
 - **作者**: HTLaoYang
 - **邮箱**: htlaoyang@163.com
-- **作者主页**: https://gitee.com/HTLaoYang
+- **作者主页**: https://github.com/htlaoyang
 
 ## 👏 微信交流群/合作
 **加群前请先阅读一下内容：**
@@ -140,7 +140,7 @@ python build_exe.py
     <td align="center">QQ群</td>
   </tr>
   <tr>
-    <td ><img src="./resources/qqjlq.jpg"/></td>  
+    <td ><img src="./resources/screenshot/qqjlq.jpg"/></td>  
   </tr>
 </table>
 
