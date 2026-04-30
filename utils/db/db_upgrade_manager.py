@@ -117,11 +117,11 @@ class DBUpgradeManager:
     def init_system_tables(self):
         """初始化升级表和系统变量表（如果不存在）"""
         try:
-            with db_connection() as cursor:
+            with db_connection() as conn:
                 # 先启用 WAL
-                cursor.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA journal_mode=WAL")
                 # 1. 创建升级记录表（使用版本号作为主键）
-                cursor.execute('''
+                conn.execute('''
                 CREATE TABLE IF NOT EXISTS db_upgrades (
                     version TEXT PRIMARY KEY NOT NULL, -- 版本号，格式YYYYMMDDHHMMSS
                     upgrade_type TEXT NOT NULL, -- 类型: table, column, procedure
@@ -134,7 +134,7 @@ class DBUpgradeManager:
                 ''')
                 
                 # 2. 创建系统变量表（存储最后升级版本等系统信息）
-                cursor.execute('''
+                conn.execute('''
                 CREATE TABLE IF NOT EXISTS system_vars (
                     var_name TEXT PRIMARY KEY NOT NULL, -- 变量名
                     var_value TEXT, -- 变量值
@@ -144,7 +144,7 @@ class DBUpgradeManager:
                 ''')
 
                 # 3. 初始化最后升级版本变量
-                cursor.execute('''
+                conn.execute('''
                 INSERT OR IGNORE INTO system_vars 
                 (var_name, var_value, description)
                 VALUES (?, ?, ?)
@@ -242,14 +242,19 @@ class DBUpgradeManager:
         :param description: 升级描述
         """
         try:
-            with db_connection() as cursor:
-                cursor.execute('SELECT version FROM db_upgrades WHERE version = ?', (version,))
-                if not cursor.fetchone():
-                    cursor.execute('''
+            with db_connection() as conn:
+                result = conn.execute(
+                    'SELECT version FROM db_upgrades WHERE version = ?', 
+                    (version,)
+                ).fetchone()
+                
+                if not result:
+                    conn.execute('''
                         INSERT INTO db_upgrades 
                         (version, upgrade_type, target_name, sql_script, description)
                         VALUES (?, ?, ?, ?, ?)
                     ''', (version, upgrade_type, target_name, sql_script, description))
+                    conn.commit()  # 显式提交（虽然上下文管理器会做，但明确更安全）
                     self._write_log(f"已注册升级: 版本 {version} - {target_name}")
                 else:
                     self._write_log(f"升级已存在: 版本 {version} - {target_name}")
@@ -354,25 +359,22 @@ class DBUpgradeManager:
         """同步执行升级逻辑（在子线程中调用）"""
         upgraded_count = 0
         latest_executed_version = "20000101000000"  # 默认初始版本
-    
-        try:
-            with db_connection() as cursor:
 
-                #获取上次升级版本 ===
-                cursor.execute("SELECT var_value FROM system_vars WHERE var_name = ?", ("last_upgrade_version",))
-                row = cursor.fetchone()
+        try:
+            with db_connection() as conn:
+                # 获取上次升级版本
+                row = conn.execute("SELECT var_value FROM system_vars WHERE var_name = ?", ("last_upgrade_version",)).fetchone()
                 last_version = row[0] if row else "20000101000000"
                 self._write_log(f"读取最后成功升级版本: {last_version}")
-    
-                #查询待执行的升级项 ===
-                cursor.execute('''
+
+                # 查询待执行的升级项
+                pending_upgrades = conn.execute('''
                     SELECT version, upgrade_type, target_name, sql_script, description 
                     FROM db_upgrades 
                     WHERE executed = 0 AND version > ?
                     ORDER BY version ASC
-                ''', (last_version,))
-                pending_upgrades = cursor.fetchall()
-    
+                ''', (last_version,)).fetchall()
+
                 if not pending_upgrades:
                     self._write_log("数据库已是最新版本，无需升级。")
                     if progress_callback:
@@ -381,57 +383,52 @@ class DBUpgradeManager:
     
                 total = len(pending_upgrades)
                 self._write_log(f"发现 {total} 个待升级任务，开始执行...")
-    
-                #逐个执行升级 ===
+
+                # 逐个执行升级
                 for i, (version, up_type, target, sql_script, desc) in enumerate(pending_upgrades):
                     status_msg = desc or f"[{up_type}] {target}"
                     percent = int((i + 1) / total * 100)  # 使用 i+1 避免最后一步不更新到 100%
     
                     try:
-                        # 更新状态（即使检查也可能耗时）
                         if progress_callback:
                             progress_callback(percent, f"检查: {status_msg}")
-    
-                        # 检查是否已存在（防重复）
-                        if self._check_if_already_exists(cursor, up_type, target):
+
+                        # 检查是否已存在
+                        if self._check_if_already_exists(conn, up_type, target):
                             self._write_log(f"跳过已存在对象: {target} (版本 {version})")
-                            self._mark_as_executed(cursor, version)
+                            self._mark_as_executed(conn, version)
                             latest_executed_version = version
                             upgraded_count += 1
                             continue
-    
-                        # 执行 SQL 升级脚本
+
+                        # 执行 SQL
                         if progress_callback:
                             progress_callback(percent, f"执行: {status_msg}")
                         self._write_log(f"正在执行升级 [{version}]: {desc or sql_script[:60]}...")
-    
-                        cursor.execute(sql_script)
-    
+
+                        conn.execute(sql_script)
+
                         # 标记为已执行
-                        self._mark_as_executed(cursor, version)
-                        self._write_log(f"✅ 升级成功: 版本 {version} | {desc}")
-    
+                        self._mark_as_executed(conn, version)
+                        self._write_log(f"升级成功: 版本 {version} | {desc}")
+
                         latest_executed_version = version
                         upgraded_count += 1
-    
+
                     except Exception as e:
                         error_msg = f"升级失败 [版本 {version}]: {desc} | 错误: {str(e)}"
                         self._write_log(error_msg)
                         self._write_log(f"SQL 脚本: {sql_script}")
                         self._write_log(traceback.format_exc())
-    
-                        # 可选：决定是否继续后续升级
-                        # 当前策略：中断并抛出异常（保证数据一致性）
                         raise RuntimeError(error_msg) from e
-    
-                #全部成功后更新最后版本号 ===
+
+                # 全部成功后更新最后版本号
                 if upgraded_count > 0:
-                    self._update_last_upgrade_version(latest_executed_version, cursor=cursor)
+                    self._update_last_upgrade_version(latest_executed_version, conn=conn)
                     self._write_log(f"数据库升级完成！共执行 {upgraded_count} 项，最新版本: {latest_executed_version}")
                 else:
                     self._write_log("无有效升级项被执行。")
-    
-                #完成 UI 回调 ===
+
                 if progress_callback:
                     progress_callback(100, "升级完成！")
     
@@ -449,52 +446,54 @@ class DBUpgradeManager:
         """检查目标是否已存在，避免重复执行升级"""
         try:
             if upgrade_type == "table":
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (target_name,))
-                return cursor.fetchone() is not None
+                row = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (target_name,)).fetchone()
+                return row is not None
             elif upgrade_type == "column":
                 if '.' not in target_name:
                     return False
                 table, column = target_name.split('.', 1)
-                cursor.execute(f"PRAGMA table_info({table})")
-                cols = [row[1] for row in cursor.fetchall()]
+                result = conn.execute(f"PRAGMA table_info({table})").fetchall()
+                cols = [row[1] for row in result]
                 return column in cols
             return False
         except Exception as e:
             self._write_log(f"检查目标 {target_name} 存在性失败: {str(e)}")
             return False
-
-    def _mark_as_executed(self, cursor, version):
-        cursor.execute('''
+    def _mark_as_executed(self, conn, version):
+        conn.execute('''
             UPDATE db_upgrades 
             SET executed = 1, execution_time = ? 
             WHERE version = ?
         ''', (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), version))
-    def _update_last_upgrade_version(self, version, cursor=None):
+        conn.commit()  # 可选：上下文管理器会自动 commit，但显式更清晰
+    def _update_last_upgrade_version(self, version, conn=None):
         """
         更新最后升级版本号
         :param version: 版本号字符串，如 "20250925120000"
-        :param cursor: 可选的数据库游标（用于复用事务）
+        :param conn: 可选的数据库连接对象（用于复用事务）
         """
         query = '''
             INSERT OR REPLACE INTO system_vars (var_name, var_value, updated_at)
             VALUES ('last_upgrade_version', ?, ?)
         '''
         updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-        if cursor is not None:
-            # 使用传入的 cursor（同一个事务）
+
+        if conn is not None:
+            # 复用现有连接（同一事务）
             try:
-                cursor.execute(query, (version, updated_at))
+                conn.execute(query, (version, updated_at))
+                conn.commit()
                 self._write_log(f"已更新最后升级版本: {version}")
             except Exception as e:
                 error_msg = f"更新最后升级版本失败: {str(e)}"
                 self._write_log(error_msg)
                 raise  # 向上传播异常，避免静默失败
         else:
-            # 独立调用：自己管理连接
+            # 独立调用：创建新连接
             try:
-                with db_connection() as conn_cursor:
-                    conn_cursor.execute(query, (version, updated_at))
+                with db_connection() as new_conn:
+                    new_conn.execute(query, (version, updated_at))
+                    new_conn.commit()
                     self._write_log(f"已更新最后升级版本: {version}")
             except Exception as e:
                 error_msg = f"更新最后升级版本失败: {str(e)}"

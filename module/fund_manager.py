@@ -14,7 +14,6 @@ from tkinter import filedialog, messagebox, ttk
 # 本地模块（需确保路径正确）
 from utils.db.database import db_connection
 
-
 class FundManager:
     def __init__(self, root, status_var, refresh_funds_cb, update_main_list_cb):
         """

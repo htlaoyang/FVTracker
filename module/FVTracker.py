@@ -49,8 +49,16 @@ plt.rcParams["axes.unicode_minus"] = False
 class FVTracker:
     def __init__(self, root):
         # 软件版本配置
-        self.software_version = "V1.2.1   by htlaoyang"
+        self.software_version = "V1.2.3   by htlaoyang"
         self.version_update_log = """
+V1.2.3 更新内容：
+1. 增加监控基金列表显示列自定义设置;【优化功能】
+2. 增加钛媒体新闻快讯语音播报开关;（设置页->启用快讯语音播报）【增加功能】
+3. 优化状态栏快讯始终显示最新一条快讯;【优化功能】	
+V1.2.2 更新内容：
+1. 增加基金历史估值下载更新，只有每天的估值，无每天详细估值;【增加功能】
+2. 优化加仓策略分析;【优化功能】
+3. 增加月季度分析;
 V1.2.1 更新内容：
   1. 增加托盘功能
   2. 增加钛媒体新闻快讯获取及自动播报功能
@@ -99,14 +107,33 @@ V1.1.1 更新内容：
         
         # === 快讯系统）===
         self.news_display_queue = []      # 待显示/播报的快讯列表 [item1, item2, ...]
+        self.last_news_display = ""       # 缓存最后一条显示的快讯
 
         self.current_display_index = 0    # 当前显示的索引（用于轮播）
         self.news_paused = False          # 鼠标悬停暂停
         self.news_cycle_job = None        # 轮播定时器
         self.news_fetch_job = None        # 拉取定时器
+		# === 快讯播报开关 ===
+        self.news_alert_enabled = True
         
         self.last_end_ts = int(time.time()) - 300  # 首次拉取：5分钟前
         
+        # === 列配置定义 ===
+        self.fixed_columns = ["hold", "code", "name"]
+        self.optional_columns = [
+            ("unit_net_value", "单位净值(昨)"),
+            ("realtime_estimate", "实时估值(今)"),
+            ("change_rate", "涨跌幅(%)"),
+            ("hold_cost", "持有成本"),
+            ("hold_shares", "持有份额"),
+            ("realtime_profit", "当日盈亏"),
+            ("rise_alert", "上涨提醒(%)"),
+            ("fall_alert", "下跌提醒(%)"),
+        ]
+        self.user_optional_columns = [col[0] for col in self.optional_columns]  # 默认全选
+		
+        # === 列显示配置文件路径 ===
+        self.column_config_file = os.path.join(os.getcwd(), "column_config.json")
 		
         # 常用指数列表
         self.indices = [
@@ -123,7 +150,7 @@ V1.1.1 更新内容：
         
         # 状态与锁初始化
         self.status_var = tk.StringVar()
-        self.status_var.set("就绪")
+        self.set_temp_status("就绪")
         self.refresh_lock = threading.Lock()  # 刷新操作锁
         self.is_refreshing_indices = False    # 指数刷新状态
 		
@@ -149,7 +176,7 @@ V1.1.1 更新内容：
         self.current_display_date = datetime.date.today().strftime('%Y-%m-%d') # 默认显示当天数据
         
 		
-        # 新增：缓存当前显示的数据，用于比对差异
+        # 缓存当前显示的数据，用于比对差异
         self.current_display_data = {}  # 格式: {fund_code: {column_index: value, ...}}
         self.code_to_item_id = {}  # 基金代码与Treeview行ID的映射
 		
@@ -166,6 +193,8 @@ V1.1.1 更新内容：
         self._refresh_funds_callback()  # 加载数据
         self.load_settings()
         self.initialize_main_table_if_empty()  # 初始化主表空数据
+        # 加载列显示配置（必须在 create_widgets 之前）
+        self.load_column_config()
 
         # 创建界面
         self.create_widgets()
@@ -271,7 +300,7 @@ V1.1.1 更新内容：
     
         except Exception as e:
             #print(f"[FundManager] 初始化主表失败: {str(e)}")
-            self.status_var.set(f"初始化主表失败: {str(e)}")   
+            self.set_temp_status(f"初始化主表失败: {str(e)}")   
     def load_window_settings(self):
 
         # 默认大小（也应限制）
@@ -306,7 +335,24 @@ V1.1.1 更新内容：
                 config.write(f)
         except Exception as e:
             print(f"保存窗口设置错误: {e}")
-
+    def load_column_config(self):
+        all_optional = [col[0] for col in self.optional_columns]
+        self.user_optional_columns = all_optional.copy()
+        if os.path.exists(self.column_config_file):
+            try:
+                with open(self.column_config_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    saved = data.get("optional_columns", [])
+                    self.user_optional_columns = [c for c in saved if c in all_optional]
+            except Exception as e:
+                print(f"[列配置] 加载失败: {e}")
+    
+    def save_column_config(self, optional_list):
+        try:
+            with open(self.column_config_file, "w", encoding="utf-8") as f:
+                json.dump({"optional_columns": optional_list}, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"[列配置] 保存失败: {e}")
     def create_widgets(self):
         # 创建主标签页控件
         self.tab_control = ttk.Notebook(self.root)
@@ -328,7 +374,58 @@ V1.1.1 更新内容：
         self.init_main_tab()
         self.fund_manager.init_add_fund_tab(self.add_fund_tab)
         self.init_settings_tab()
-		
+
+    def setup_column_visibility_menu(self):
+        # 使用较小字体的 tk.Menu
+        self.column_menu = tk.Menu(
+            self.fund_tree,
+            tearoff=0,
+            font=("Microsoft YaHei", 8)  # 直接设置菜单字体
+        )
+        self.column_vars = {}
+    
+        for col_id, col_name in self.optional_columns:
+            is_visible = col_id in self.user_optional_columns
+            var = tk.BooleanVar(value=is_visible)
+            self.column_vars[col_id] = var
+    
+            self.column_menu.add_checkbutton(
+                label=col_name,
+                variable=var,
+                command=lambda c=col_id: self.toggle_column_visibility(c)
+            )
+
+    def show_column_menu(self, event):
+        """在表头区域右键时弹出列设置菜单"""
+        # 判断是否点击在表头区域（粗略判断：y < 表头高度）
+        if event.y <= 25:  # ttk.Treeview 表头高度通常约20-25px
+            try:
+                self.column_menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                self.column_menu.grab_release()
+    
+    def toggle_column_visibility(self, col_id):
+        """切换可选列的显示状态并保存配置"""
+        var = self.column_vars[col_id]
+        is_visible = var.get()
+    
+        # 更新用户选中的可选列列表
+        if is_visible:
+            if col_id not in self.user_optional_columns:
+                self.user_optional_columns.append(col_id)
+        else:
+            if col_id in self.user_optional_columns:
+                self.user_optional_columns.remove(col_id)
+    
+        # 应用新的列显示顺序：固定列 + 按 optional_columns 顺序过滤出的已选列
+        self.fund_tree["displaycolumns"] = self.get_current_display_columns()
+    
+        # 保存配置（只保存可选列 ID）
+        self.save_column_config(self.user_optional_columns)
+    def get_current_display_columns(self):
+        """组合固定列 + 用户选中的可选列"""
+        selected_optional = [col_id for col_id, _ in self.optional_columns if col_id in self.user_optional_columns]
+        return self.fixed_columns + selected_optional
     def init_main_tab(self):
         """初始化基金监控主界面（优化布局+手动刷新按钮）"""
         self.setup_styles()
@@ -504,10 +601,14 @@ V1.1.1 更新内容：
         # 配置权重
         self.fund_list_frame.columnconfigure(0, weight=1)
         self.fund_list_frame.rowconfigure(0, weight=1)
+		
+        #初始化列显示菜单
+        self.setup_column_visibility_menu()
     
         # 绑定选中事件
         self.fund_tree.bind("<<TreeviewSelect>>", self.on_fund_select)
-    
+        self.fund_tree.bind("<Button-3>", self._on_tree_right_click)
+		
         # --- 右侧内容容器：使用 grid 替代 pack ---
         right_content_frame = ttk.Frame(right_frame)
         right_content_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
@@ -585,7 +686,9 @@ V1.1.1 更新内容：
     
         # 初始化图表
         self.init_chart()
-    
+
+        # 应用列显示配置
+        self.fund_tree["displaycolumns"] = self.get_current_display_columns()
         # 更新基金列表
         self.update_fund_list()
 
@@ -750,47 +853,46 @@ V1.1.1 更新内容：
                 self._write_log(f"拉取快讯失败: {e}", 'error')
             self.news_fetch_job = self.root.after(30000, fetch_and_enqueue)
     
-        self.is_playing = False  # 新增标志位
-        self.news_fetch_job = self.root.after(1000, fetch_and_enqueue)
-    
+        self.is_playing = False  # 标志位
+        self.news_fetch_job = self.root.after(1000, fetch_and_enqueue)    
     
     def _play_next_in_queue(self):
-        """顺序播放：播一条 → 显示它 → 等播完 → 播下一条"""
+        """处理下一条快讯：始终显示在状态栏，仅当开关开启时语音播报 顺序播放：播一条 → 显示它 → 等播完 → 播下一条"""
         if not self.news_display_queue or self.is_playing:
             return
     
         self.is_playing = True
-        item = self.news_display_queue.pop(0)  # 立即取出
+        item = self.news_display_queue.pop(0)
     
-        # 立即更新状态栏为当前播放的这条
+        # 始终更新状态栏和缓存
         display_text = f"【快讯】{item['time_str']} {item['title']}"
-        self.status_var.set(display_text)
-        
-        # 日志：明确记录“正在播放”
-        self._write_log(f"▶ 正在播放: [{item['time_str']}] {item['title']}", 'info')
+        self.last_news_display = display_text
+        self.status_var.set(display_text)  # 直接设置，不使用 set_temp_status
+        self._write_log(f"▶ 准备处理快讯: [{item['time_str']}] {item['title']}", 'info')
     
-        def play_audio():
-            try:
-                play_audio_from_url(item["audio_url"])
-                self._write_log(f"✅ 播放完成: [{item['time_str']}] {item['title']}", 'info')
-            except Exception as e:
-                self._write_log(f"❌ 播放失败: {e}", 'error')
-            finally:
-                # 播放结束后，继续下一条
-                self.root.after(500, self._finish_play_and_continue)
-    
-        threading.Thread(target=play_audio, daemon=True).start()
-    
-    
+        #根据开关决定是否播报
+        if self.news_alert_enabled:
+            def play_audio():
+                try:
+                    self._write_log(f"� 尝试播放音频: {item['audio_url']}", 'debug')
+                    play_audio_from_url(item["audio_url"])
+                    self._write_log(f"✅ 语音播报完成: [{item['time_str']}] {item['title']}", 'info')
+                except Exception as e:
+                    self._write_log(f"❌ 语音播报失败: {e}", 'error')
+                finally:
+                    self.root.after(500, self._finish_play_and_continue)
+            threading.Thread(target=play_audio, daemon=True).start()
+        else:
+            # 静音模式：直接完成
+            self._write_log(f"� 快讯静音（未播报）: [{item['time_str']}] {item['title']}", 'debug')
+            self.root.after(500, self._finish_play_and_continue)
+
     def _finish_play_and_continue(self):
         """播放完成后的清理和继续"""
         self.is_playing = False
         # 如果还有消息，继续播放
         if self.news_display_queue:
             self.root.after(1000, self._play_next_in_queue)
-        else:
-            # 队列空了，清空状态栏或显示提示
-            self.status_var.set("暂无快讯")
     def open_history_viewer(self):
         """打开基金历史记录查看器（传递主窗口实例，用于居中定位）"""
         selected_items = self.fund_tree.selection()
@@ -957,37 +1059,46 @@ V1.1.1 更新内容：
         ttk.Label(interval_frame, text="自动刷新间隔(分钟):").pack(side=tk.LEFT, padx=(0, 10))
         
         self.refresh_interval_var = tk.IntVar(value=self.update_interval // 60)
-        self.refresh_interval_combo = ttk.Combobox(interval_frame, textvariable=self.refresh_interval_var, 
-                                                  values=[1, 2, 5, 10, 15, 30], width=5, state="readonly")
+        self.refresh_interval_combo = ttk.Combobox(
+            interval_frame, 
+            textvariable=self.refresh_interval_var, 
+            values=[1, 2, 5, 10, 15, 30], 
+            width=5, 
+            state="readonly"
+        )
         self.refresh_interval_combo.pack(side=tk.LEFT)
         
-        # 数据库管理
+        # --- 快讯播报开关（新增）---
+        news_frame = ttk.Frame(frame)
+        news_frame.pack(fill=tk.X, pady=15)
+        self.news_alert_var = tk.BooleanVar(value=self.news_alert_enabled)  # 绑定变量
+        ttk.Checkbutton(
+            news_frame,
+            text="启用快讯语音播报",
+            variable=self.news_alert_var
+        ).pack(side=tk.LEFT)
+    
+        # --- 数据库管理 ---
         db_frame = ttk.LabelFrame(frame, text="数据库管理", padding="10")
         db_frame.pack(fill=tk.X, pady=15)
-        
-        # 修改按钮绑定，直接调用secure_reset_database方法
-        ttk.Button(db_frame, text="重置数据库（会备份当前数据）", 
-                  command=lambda: self.confirm_reset_database()).pack(side=tk.LEFT, padx=10, pady=5)
+        ttk.Button(
+            db_frame, 
+            text="重置数据库（会备份当前数据）", 
+            command=lambda: self.confirm_reset_database()
+        ).pack(side=tk.LEFT, padx=10, pady=5)
+    
         # 保存设置按钮
         btn_frame = ttk.Frame(frame)
         btn_frame.pack(fill=tk.X, pady=20)
-        
         ttk.Button(btn_frame, text="保存设置", command=self.save_settings).pack(side=tk.LEFT)
-        
-        # 说明文本
-        说明_text = """
-设置说明:
-
-1. 自动刷新间隔: 设置基金估值自动刷新的时间间隔(分钟)
-   刷新将在交易时间内执行
-
-2. 交易时间: 每个交易日 
-   上午 9:00 - 11:30
-   下午 13:30 - 15:00
-
-3. 数据存储: 所有基金数据和历史估值保存在SQLite数据库中
-   数据库文件: fund_data.db
-        """
+    
+        # --- 说明文本 ---
+        说明_text = """设置说明:
+    1. 自动刷新间隔: 设置基金估值自动刷新的时间间隔(分钟)，刷新将在交易时间内执行
+    2. 快讯播报: 启用后，系统将自动拉取并语音播报最新财经快讯
+    3. 交易时间: 每个交易日 上午 9:00 - 11:30，下午 13:30 - 15:00
+    4. 数据存储: 所有基金数据和历史估值保存在SQLite数据库中
+       数据库文件: fund_data.db"""
         text_widget = tk.Text(frame, wrap=tk.WORD, height=10, width=60)
         text_widget.pack(fill=tk.X, pady=10)
         text_widget.insert(tk.END, 说明_text)
@@ -1030,39 +1141,66 @@ V1.1.1 更新内容：
 
             else:
                 messagebox.showerror("错误", "数据库重置失败")
-
-
+	
     def load_settings(self):
         """加载设置"""
         with db_connection() as conn:
-            result = conn.execute(
-                "SELECT value FROM settings WHERE key = ?", 
-                ("refresh_interval",)
-            ).fetchone()
+            # 刷新间隔
+            result = conn.execute("SELECT value FROM settings WHERE key = ?", ("refresh_interval",)).fetchone()
             if result:
                 self.update_interval = int(result[0]) * 60  # 转换为秒
             else:
                 self.update_interval = 300  # 默认5分钟
+    
+            # 快讯播报开关
+            result2 = conn.execute("SELECT value FROM settings WHERE key = ?", ("news_alert_enabled",)).fetchone()
+            if result2:
+                self.news_alert_enabled = (result2[0] == '1')
+            else:
+                self.news_alert_enabled = True  # 默认启用		
     def save_settings(self):
         """保存设置"""
         interval_minutes = self.refresh_interval_var.get()
-        self.update_interval = interval_minutes * 60  # 转换为秒
-        
+        new_interval_seconds = interval_minutes * 60
+    
+        # 获取当前开关状态（从 UI 变量读取）
+        news_enabled = self.news_alert_var.get()
+    
         with db_connection() as cursor:
             cursor.execute(
                 "UPDATE settings SET value = ? WHERE key = 'refresh_interval'",
                 (str(interval_minutes),)
             )
-        
-        # 保存窗口位置和大小
-        #self.save_window_settings()
-        
-        # 重启监控以应用新的间隔
-        self.stop_monitoring()
-        self.start_monitoring()
-        
-        messagebox.showinfo("成功", f"设置已保存，自动刷新间隔为 {interval_minutes} 分钟")
-
+            cursor.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('news_alert_enabled', ?)",
+                ('1' if news_enabled else '0',)
+            )
+    
+        # 同步更新实例变量！
+        self.news_alert_enabled = news_enabled
+    
+        # === 仅当刷新间隔改变时，才重启监控 ===
+        need_restart = (self.update_interval != new_interval_seconds)
+        self.update_interval = new_interval_seconds
+    
+        if need_restart:
+            if hasattr(self, 'stop_monitoring') and hasattr(self, 'start_monitoring'):
+                self.stop_monitoring()
+                self.start_monitoring()
+    
+        msg = f"设置已保存，自动刷新间隔为 {interval_minutes} 分钟"
+        if not need_restart:
+            msg += "\n（快讯播报设置已更新，无需重启监控）"
+        messagebox.showinfo("成功", msg)
+    def _on_tree_right_click(self, event):
+        """统一右键处理：表头→列设置"""
+        region = self.fund_tree.identify_region(event.x, event.y)
+        if region == "heading":
+            # 表头：列设置
+            try:
+                self.column_menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                self.column_menu.grab_release()
     def on_fund_select(self, event):
         selected_items = self.fund_tree.selection()
         if not selected_items:
@@ -1311,6 +1449,17 @@ V1.1.1 更新内容：
             top=0.9
         )
         self.canvas.draw()
+    def _show_view_mode_menu(self, event):
+        """在非表头区域右键时弹出视图菜单"""
+        # 判断是否点击在数据行区域（y > 表头高度）
+        if event.y > 25:  # 表头约25px
+            try:
+                self.view_mode_menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                self.view_mode_menu.grab_release()
+        else:
+            # 表头区域仍触发列设置菜单
+            self.show_column_menu(event)
 
     def update_fund_list(self):
         """增量更新基金列表（添加、更新、删除）"""
@@ -1662,8 +1811,13 @@ V1.1.1 更新内容：
         self.is_monitoring = True
         self._write_log("监控已启动")
         self.root.after(100, self.perform_periodic_refresh)
-			
-		
+    def stop_monitoring(self):
+       """停止自动刷新监控"""
+       if self.is_monitoring:
+    	   self.is_monitoring = False
+    	   self._write_log("监控已停止")
+    	   # 取消所有待执行的 after 任务（可选，更彻底）
+    	   # 注意：after 任务无法直接取消，但可通过标志位忽略
     def perform_periodic_refresh(self):
         if not self.is_monitoring:
             return
@@ -1679,11 +1833,11 @@ V1.1.1 更新内容：
                 if wait_until < now:
                     wait_until += datetime.timedelta(days=1)
                 wait_ms = int((wait_until - now).total_seconds() * 1000)
-                self.status_var.set(f"等待开盘... {wait_until.strftime('%H:%M:%S')}")
+                self.set_temp_status(f"等待开盘... {wait_until.strftime('%H:%M:%S')}")
                 self._write_log(f"盘前等待，将在 {wait_until.strftime('%H:%M:%S')} 开始刷新")
                 self.root.after(wait_ms, self.perform_periodic_refresh)
             else:
-                self.status_var.set("今日监控结束，明天再见")
+                self.set_temp_status("今日监控结束，明天再见")
                 self._write_log("今日监控结束")
                 self.is_monitoring = False
             return
@@ -1710,7 +1864,7 @@ V1.1.1 更新内容：
             status_msg = f"刷新完成 | 成功:{success_count} 失败:{fail_count} | 下次: {next_refresh_dt.strftime('%H:%M')}"
             
             def on_main_thread():
-                self.status_var.set(status_msg)
+                self.set_temp_status(status_msg)
                 self._write_log(status_msg)
                 #重新调度下一次
                 now = self.get_now()
@@ -1765,6 +1919,13 @@ V1.1.1 更新内容：
         """
         full_message = f"{level.upper():<8} {message}"
         write_log(full_message, log_dir=self.log_dir, prefix=self.log_prefix)
+		
+    def set_temp_status(self, message: str, duration_ms: int = 2000):
+        """临时显示状态消息，之后自动恢复最后一条快讯（如果存在）"""
+        current_news = self.last_news_display
+        self.status_var.set(message)
+        if current_news:
+            self.root.after(duration_ms, lambda: self.status_var.set(current_news))
     def manual_refresh(self):
         """手动刷新基金数据"""
         # 检查是否正在刷新中
@@ -1773,7 +1934,7 @@ V1.1.1 更新内容：
                 # 手动刷新不受交易时间限制
                 def refresh_task():
                     success_count, fail_count = self.refresh_all_funds(force=True)
-                    self.root.after(0, lambda: self.status_var.set(
+                    self.root.after(0, lambda: self.set_temp_status(
                         f"手动刷新完成 {datetime.datetime.now().strftime('%H:%M:%S')}，成功:{success_count} 失败:{fail_count}"
                     ))
                     self.root.after(0, self.update_fund_list)
@@ -1782,11 +1943,11 @@ V1.1.1 更新内容：
                         self.root.after(0, self.update_chart)
                 
                 threading.Thread(target=refresh_task, daemon=True).start()
-                self.status_var.set("正在执行手动刷新...")
+                self.set_temp_status("正在执行手动刷新...")
             finally:
                 self.refresh_lock.release()
         else:
-            self.status_var.set("已有刷新操作正在进行中，请稍候...")
+            self.set_temp_status("已有刷新操作正在进行中，请稍候...")
 
 
     def refresh_all_funds(self, force=False):
@@ -2017,7 +2178,7 @@ V1.1.1 更新内容：
         # 2. 定义线程终止处理函数，减少重复代码
         def terminate_thread(thread_name, thread_attr, timeout):
             if hasattr(self, thread_attr) and getattr(self, thread_attr).is_alive():
-                self.status_var.set(f"正在关闭{thread_name}...")
+                self.set_temp_status(f"正在关闭{thread_name}...")
                 self.root.update()  # 刷新UI显示状态
                 getattr(self, thread_attr).join(timeout=timeout)
                 if getattr(self, thread_attr).is_alive():
