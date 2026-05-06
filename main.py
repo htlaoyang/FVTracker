@@ -109,7 +109,7 @@ class TrayManager:
 
 if __name__ == "__main__":
     try:
-        # 创建 Tk 实例
+
         root = tk.Tk()
         root.withdraw()  # 先隐藏主窗口
         root.update_idletasks()
